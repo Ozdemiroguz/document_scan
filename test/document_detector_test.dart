@@ -1,0 +1,208 @@
+import 'dart:async';
+
+import 'package:document_scan/document_scan.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  // A fake native side: records the calls it received and replies with a
+  // scripted result. Wired through the real MethodChannel binary messenger so we
+  // exercise the actual codec + the detector's encode/decode, not a stub.
+  late List<MethodCall> calls;
+  late Object? Function(MethodCall call) responder;
+  late DocumentDetector detector;
+
+  const channel = MethodChannel('com.oguzhan.document_scan/detector');
+
+  setUp(() {
+    calls = [];
+    responder = (_) => null;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return responder(call);
+    });
+    detector = DocumentDetector(channel: channel);
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+  });
+
+  // A well-formed native reply (unordered points — detector must order them).
+  Map<String, dynamic> nativeCorners() => {
+        'topLeftX': 0.1, 'topLeftY': 0.1,
+        'topRightX': 0.9, 'topRightY': 0.1,
+        'bottomRightX': 0.9, 'bottomRightY': 0.9,
+        'bottomLeftX': 0.1, 'bottomLeftY': 0.9,
+      };
+
+  group('detect() method + argument encoding', () {
+    test('file input calls detectFile with the path', () async {
+      responder = (_) => nativeCorners();
+      await detector.detect(ScanInput.file('/tmp/doc.jpg'));
+
+      expect(calls, hasLength(1));
+      expect(calls.single.method, 'detectFile');
+      expect(calls.single.arguments['path'], '/tmp/doc.jpg');
+    });
+
+    test('bytes input calls detectFrame with bytes + dimensions', () async {
+      responder = (_) => nativeCorners();
+      await detector.detect(
+        ScanInput.bytes(Uint8List.fromList([1, 2, 3]), width: 640, height: 480),
+      );
+
+      expect(calls.single.method, 'detectFrame');
+      expect(calls.single.arguments['width'], 640);
+      expect(calls.single.arguments['height'], 480);
+      expect(calls.single.arguments['bytes'], isA<Uint8List>());
+    });
+
+    test('yuv420 camera frame encodes planes + strides + format', () async {
+      responder = (_) => nativeCorners();
+      await detector.detect(
+        ScanInput.cameraFrame(
+          width: 1920,
+          height: 1080,
+          format: ScanImageFormat.yuv420,
+          rotation: 90,
+          yBytes: Uint8List.fromList([1]),
+          uBytes: Uint8List.fromList([2]),
+          vBytes: Uint8List.fromList([3]),
+          yRowStride: 1920,
+          uvRowStride: 960,
+          uvPixelStride: 2,
+        ),
+      );
+
+      final args = calls.single.arguments as Map;
+      expect(calls.single.method, 'detectFrame');
+      expect(args['format'], 'yuv420');
+      expect(args['rotation'], 90);
+      expect(args['yBytes'], isA<Uint8List>());
+      expect(args['uBytes'], isA<Uint8List>());
+      expect(args['vBytes'], isA<Uint8List>());
+      expect(args['yRowStride'], 1920);
+      expect(args['uvPixelStride'], 2);
+    });
+
+    test('bgra camera frame encodes format bgra', () async {
+      responder = (_) => nativeCorners();
+      await detector.detect(
+        ScanInput.cameraFrame(
+          width: 1280,
+          height: 720,
+          format: ScanImageFormat.bgra8888,
+          bytes: Uint8List.fromList([9]),
+          bytesPerRow: 5120,
+        ),
+      );
+
+      final args = calls.single.arguments as Map;
+      expect(args['format'], 'bgra');
+      expect(args['bytesPerRow'], 5120);
+    });
+  });
+
+  group('detect() result decoding', () {
+    test('orders the native reply into TL/TR/BR/BL', () async {
+      // Reply with points in a scrambled order; the detector must normalize.
+      responder = (_) => {
+            'topLeftX': 0.9, 'topLeftY': 0.9, // actually BR
+            'topRightX': 0.1, 'topRightY': 0.1, // actually TL
+            'bottomRightX': 0.1, 'bottomRightY': 0.9, // actually BL
+            'bottomLeftX': 0.9, 'bottomLeftY': 0.1, // actually TR
+          };
+      final c = await detector.detect(ScanInput.file('/x.jpg'));
+
+      expect(c, isNotNull);
+      expect(c!.topLeft, (x: 0.1, y: 0.1));
+      expect(c.bottomRight, (x: 0.9, y: 0.9));
+    });
+
+    test('returns null when native reports no document', () async {
+      responder = (_) => null;
+      final c = await detector.detect(ScanInput.file('/x.jpg'));
+      expect(c, isNull);
+    });
+
+    test('propagates a PlatformException from the native side', () async {
+      responder = (_) => throw PlatformException(code: 'BOOM');
+      expect(
+        () => detector.detect(ScanInput.file('/x.jpg')),
+        throwsA(isA<PlatformException>()),
+      );
+    });
+  });
+
+  group('detectStream() backpressure', () {
+    test('drops frames that arrive while one is still processing', () async {
+      // Make the native call hang until we release it, so a second frame
+      // arriving mid-flight is dropped rather than queued.
+      final gate = Completer<void>();
+      var nativeCalls = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        nativeCalls++;
+        await gate.future; // hold the first call open
+        return nativeCorners();
+      });
+
+      final frames = StreamController<ScanInput>();
+      final results = <DocumentCorners?>[];
+      final sub = detector.detectStream(frames.stream).listen(results.add);
+
+      // Fire two frames back-to-back while the first is still in flight.
+      frames.add(ScanInput.file('/1.jpg'));
+      await Future<void>.delayed(Duration.zero);
+      frames.add(ScanInput.file('/2.jpg')); // should be dropped (busy)
+      await Future<void>.delayed(Duration.zero);
+
+      gate.complete(); // release the first call
+      await Future<void>.delayed(Duration.zero);
+
+      // Only the first frame reached native; the second was dropped by the
+      // busy guard, so at most one result was produced.
+      expect(nativeCalls, 1);
+      expect(results.length, lessThanOrEqualTo(1));
+
+      await sub.cancel();
+      await frames.close();
+    });
+
+    test('emits null (not error) when a frame detection throws', () async {
+      responder = (_) => throw PlatformException(code: 'BAD_FRAME');
+      final frames = StreamController<ScanInput>();
+      final results = <DocumentCorners?>[];
+      final sub = detector.detectStream(frames.stream).listen(results.add);
+
+      frames.add(ScanInput.file('/1.jpg'));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(results, [null]); // swallowed into a null emission, stream alive
+
+      await sub.cancel();
+      await frames.close();
+    });
+
+    test('closes when the source stream is done', () async {
+      responder = (_) => nativeCorners();
+      final frames = StreamController<ScanInput>();
+      var closed = false;
+      final sub =
+          detector.detectStream(frames.stream).listen((_) {}, onDone: () {
+        closed = true;
+      });
+
+      await frames.close();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(closed, isTrue);
+
+      await sub.cancel();
+    });
+  });
+}
