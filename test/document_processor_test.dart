@@ -162,12 +162,97 @@ void main() {
       }
     });
 
+    test('magicColor binarizes ink vs paper under a lighting gradient', () async {
+      // Paper with a left-to-right brightness gradient (uneven light) and a dark
+      // ink square in the middle — the exact case a global threshold smears.
+      final page = img.Image(width: 100, height: 100, numChannels: 3);
+      for (var y = 0; y < 100; y++) {
+        for (var x = 0; x < 100; x++) {
+          // Bright paper, darker on the left (120) to full-bright on the right.
+          final base = 120 + (x * 135 ~/ 100);
+          page.setPixel(x, y, img.ColorRgb8(base, base, base));
+        }
+      }
+      // A dark ink block at center.
+      img.fillRect(page, x1: 40, y1: 40, x2: 60, y2: 60,
+          color: img.ColorRgb8(20, 20, 20));
+      final bytes = Uint8List.fromList(img.encodePng(page));
+
+      final out = await processor.applyFilter(
+        ScanInput.bytes(bytes, width: 100, height: 100),
+        ScanFilter.magicColor,
+      );
+      final result = img.decodePng(out!.bytes)!;
+
+      // Ink center -> black; paper on BOTH the dim-left and bright-right sides
+      // -> white (a global threshold would blacken the dim-left paper).
+      expect(result.getPixel(50, 50).r, lessThan(64), reason: 'ink not black');
+      expect(result.getPixel(5, 50).r, greaterThan(192), reason: 'dim paper not white');
+      expect(result.getPixel(95, 50).r, greaterThan(192), reason: 'bright paper not white');
+    });
+
     test('returns null for an undecodable input', () async {
       final out = await processor.applyFilter(
         ScanInput.bytes(Uint8List.fromList([9, 9]), width: 1, height: 1),
         ScanFilter.grayscale,
       );
       expect(out, isNull);
+    });
+  });
+
+  group('output format', () {
+    late Uint8List src;
+    setUp(() => src = _pngImage(80, 80, background: img.ColorRgb8(120, 60, 200)));
+
+    test('default output is PNG', () async {
+      final out = await processor.crop(
+        ScanInput.bytes(src, width: 80, height: 80),
+        fullFrame,
+      );
+      // PNG magic: 0x89 'P' 'N' 'G'.
+      expect(out!.bytes.sublist(0, 4), [0x89, 0x50, 0x4E, 0x47]);
+    });
+
+    test('JPEG output emits a valid JPEG', () async {
+      final jpeg = await processor.crop(
+        ScanInput.bytes(src, width: 80, height: 80),
+        fullFrame,
+        output: const ScanOutputFormat.jpeg(quality: 70),
+      );
+      // JPEG magic: 0xFF 0xD8 … 0xFF 0xD9.
+      expect(jpeg!.bytes.sublist(0, 2), [0xFF, 0xD8]);
+      expect(jpeg.bytes.sublist(jpeg.bytes.length - 2), [0xFF, 0xD9]);
+      expect(jpeg.width, 80);
+    });
+
+    test('lower JPEG quality yields fewer bytes on a detailed image', () async {
+      // A noisy image so JPEG quality actually affects size (flat colors don't).
+      final noisy = img.Image(width: 120, height: 120, numChannels: 3);
+      for (var y = 0; y < 120; y++) {
+        for (var x = 0; x < 120; x++) {
+          noisy.setPixel(x, y, img.ColorRgb8((x * 7) % 256, (y * 13) % 256, (x * y) % 256));
+        }
+      }
+      final noisyPng = Uint8List.fromList(img.encodePng(noisy));
+      final hi = await processor.crop(
+        ScanInput.bytes(noisyPng, width: 120, height: 120),
+        fullFrame,
+        output: const ScanOutputFormat.jpeg(quality: 90),
+      );
+      final lo = await processor.crop(
+        ScanInput.bytes(noisyPng, width: 120, height: 120),
+        fullFrame,
+        output: const ScanOutputFormat.jpeg(quality: 30),
+      );
+      expect(lo!.bytes.length, lessThan(hi!.bytes.length));
+    });
+
+    test('ScanOutputFormat rejects out-of-range quality', () {
+      expect(() => ScanOutputFormat(quality: 0), throwsA(isA<AssertionError>()));
+      expect(
+        () => ScanOutputFormat(quality: 101),
+        throwsA(isA<AssertionError>()),
+      );
     });
   });
 }

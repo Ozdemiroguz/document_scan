@@ -12,4 +12,10 @@ enum ScanFilter {
 
   /// Sharpen edges to make text crisper.
   sharpen,
+
+  /// Adaptive "magic color" document clean-up: local (per-region) thresholding
+  /// that whitens the paper and darkens the ink evenly even under uneven
+  /// lighting or shadows — where the global [blackWhite] smears. This is the
+  /// look most scanner apps mean by "enhance".
+  magicColor,
 }

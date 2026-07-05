@@ -19,8 +19,11 @@ library;
 
 export 'src/detector/auto_capture_analyzer.dart';
 export 'src/detector/document_detector.dart';
+export 'src/export/document_pdf_exporter.dart';
 export 'src/processor/document_processor.dart';
+export 'src/session/scan_session.dart';
 export 'src/types/document_corners.dart';
 export 'src/types/scan_filter.dart';
 export 'src/types/scan_input.dart';
+export 'src/types/scan_output_format.dart';
 export 'src/types/scanned_document.dart';

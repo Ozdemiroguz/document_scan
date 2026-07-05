@@ -21,6 +21,9 @@ dependencies:
     sdk: flutter
   # Pure-Dart image decode/encode + perspective warp + filters (Processor).
   image: ^4.5.4
+  # Pure-Dart PDF generation, used only by DocumentPdfExporter (kept out of the
+  # detector/processor so the core stays dependency-light).
+  pdf: ^3.13.0
 
 dev_dependencies:
   flutter_test:

@@ -13,7 +13,9 @@ class ScannedDocument {
     required this.height,
   });
 
-  /// PNG-encoded image bytes.
+  /// Encoded image bytes — PNG by default, or JPEG when the processor was given
+  /// a JPEG [ScanOutputFormat]. Standard encoded bytes either way, so they save,
+  /// display with `Image.memory`, or hand to a PDF library directly.
   final Uint8List bytes;
 
   /// Width of the processed image, in pixels.

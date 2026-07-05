@@ -6,6 +6,7 @@ import 'package:image/image.dart' as img;
 import '../types/document_corners.dart';
 import '../types/scan_filter.dart';
 import '../types/scan_input.dart';
+import '../types/scan_output_format.dart';
 import '../types/scanned_document.dart';
 
 /// Turns a document image + its [DocumentCorners] into a clean, upright scan:
@@ -30,35 +31,40 @@ class DocumentProcessor {
     ScanInput input,
     DocumentCorners corners, {
     ScanFilter filter = ScanFilter.none,
+    ScanOutputFormat output = ScanOutputFormat.png,
   }) async {
     final source = await _decodeToImage(input);
     if (source == null) return null;
 
     final warped = _perspectiveWarp(source, corners);
     final filtered = _applyFilter(warped, filter);
-    final png = img.encodePng(filtered);
-
-    return ScannedDocument(
-      bytes: Uint8List.fromList(png),
-      width: filtered.width,
-      height: filtered.height,
-    );
+    return _encode(filtered, output);
   }
 
   /// Applies a [filter] to an already-cropped document image, without warping.
   /// Useful for re-filtering a scan the user already cropped.
   Future<ScannedDocument?> applyFilter(
     ScanInput input,
-    ScanFilter filter,
-  ) async {
+    ScanFilter filter, {
+    ScanOutputFormat output = ScanOutputFormat.png,
+  }) async {
     final source = await _decodeToImage(input);
     if (source == null) return null;
     final filtered = _applyFilter(source, filter);
-    final png = img.encodePng(filtered);
+    return _encode(filtered, output);
+  }
+
+  // --- encode output ---
+
+  ScannedDocument _encode(img.Image image, ScanOutputFormat output) {
+    final bytes = switch (output.codec) {
+      ScanImageCodec.png => img.encodePng(image),
+      ScanImageCodec.jpeg => img.encodeJpg(image, quality: output.quality),
+    };
     return ScannedDocument(
-      bytes: Uint8List.fromList(png),
-      width: filtered.width,
-      height: filtered.height,
+      bytes: Uint8List.fromList(bytes),
+      width: image.width,
+      height: image.height,
     );
   }
 
@@ -155,6 +161,69 @@ class DocumentProcessor {
           filter: const [0, -1, 0, -1, 5, -1, 0, -1, 0],
           div: 1,
         );
+      case ScanFilter.magicColor:
+        return _magicColor(src);
     }
+  }
+
+  /// Adaptive-threshold document clean-up (Bradley/Wellner style).
+  ///
+  /// For each pixel, compare its luminance against the mean luminance of the
+  /// surrounding window: pixels sufficiently darker than their local mean become
+  /// ink (black), the rest become paper (white). Because the threshold is local
+  /// it survives uneven lighting and shadows that wash out a global threshold.
+  /// The window mean is computed in O(1) per pixel via an integral image, so
+  /// the whole pass is linear in the pixel count.
+  img.Image _magicColor(img.Image src) {
+    final gray = img.grayscale(src);
+    final w = gray.width;
+    final h = gray.height;
+
+    // Luminance of each pixel (0..255).
+    final lum = Uint8List(w * h);
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        lum[y * w + x] = gray.getPixel(x, y).r.toInt();
+      }
+    }
+
+    // Integral image (summed-area table) for O(1) window sums. Width+1 padding
+    // avoids bounds checks at the edges.
+    final integral = List<int>.filled((w + 1) * (h + 1), 0);
+    for (var y = 1; y <= h; y++) {
+      var rowSum = 0;
+      for (var x = 1; x <= w; x++) {
+        rowSum += lum[(y - 1) * w + (x - 1)];
+        integral[y * (w + 1) + x] = integral[(y - 1) * (w + 1) + x] + rowSum;
+      }
+    }
+
+    // Window ~ 1/8 of the smaller side; the classic Bradley threshold subtracts
+    // a small percentage so near-mean (paper) pixels round up to white.
+    final radius = (math.min(w, h) / 16).clamp(4, 40).toInt();
+    const tPercent = 0.85; // ink if pixel < 85% of local mean
+
+    final out = img.Image(width: w, height: h, numChannels: 1);
+    for (var y = 0; y < h; y++) {
+      final y1 = (y - radius).clamp(0, h);
+      final y2 = (y + radius + 1).clamp(0, h);
+      for (var x = 0; x < w; x++) {
+        final x1 = (x - radius).clamp(0, w);
+        final x2 = (x + radius + 1).clamp(0, w);
+        final count = (x2 - x1) * (y2 - y1);
+        final sum = integral[y2 * (w + 1) + x2] -
+            integral[y1 * (w + 1) + x2] -
+            integral[y2 * (w + 1) + x1] +
+            integral[y1 * (w + 1) + x1];
+        final mean = sum / count;
+        final v = lum[y * w + x];
+        // Ink if the pixel is meaningfully darker than its local mean, OR
+        // absolutely very dark (so a large solid ink region — whose own pixels
+        // drag the local mean down — still reads as ink, not paper).
+        final ink = v < mean * tPercent || v < 60;
+        out.setPixelRgb(x, y, ink ? 0 : 255, ink ? 0 : 255, ink ? 0 : 255);
+      }
+    }
+    return out;
   }
 }
