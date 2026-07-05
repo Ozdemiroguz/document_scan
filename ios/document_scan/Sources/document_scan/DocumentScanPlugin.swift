@@ -146,6 +146,9 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
         "topRightX": trx, "topRightY": tryy,
         "bottomRightX": brx, "bottomRightY": bry,
         "bottomLeftX": blx, "bottomLeftY": bly,
+        // Vision's own detection confidence (0..1). The Dart side prefers this
+        // over its geometric heuristic when present.
+        "confidence": Double(obs.confidence),
       ]
       DispatchQueue.main.async { completion(corners) }
     }

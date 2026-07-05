@@ -103,11 +103,20 @@ class DocumentDetector {
     double v(String k) => (r[k] as num).toDouble();
     // The native side returns four points; order them here so the engine's
     // vertex order is irrelevant.
-    return DocumentCorners.fromUnordered([
+    final corners = DocumentCorners.fromUnordered([
       (x: v('topLeftX'), y: v('topLeftY')),
       (x: v('topRightX'), y: v('topRightY')),
       (x: v('bottomRightX'), y: v('bottomRightY')),
       (x: v('bottomLeftX'), y: v('bottomLeftY')),
     ]);
+
+    // Confidence: prefer the engine's own value when the platform supplies one
+    // (iOS/Vision), otherwise derive a geometric heuristic (Android/OpenCV has
+    // no probability). See DocumentCorners.confidence for the asymmetry.
+    final native = r['confidence'];
+    final confidence = native is num
+        ? native.toDouble().clamp(0.0, 1.0)
+        : corners.geometricConfidence();
+    return corners.copyWith(confidence: confidence);
   }
 }

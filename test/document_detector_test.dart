@@ -130,6 +130,20 @@ void main() {
       expect(c, isNull);
     });
 
+    test('prefers the native confidence when the platform supplies one', () async {
+      responder = (_) => {...nativeCorners(), 'confidence': 0.42};
+      final c = await detector.detect(ScanInput.file('/x.jpg'));
+      expect(c!.confidence, closeTo(0.42, 1e-9));
+    });
+
+    test('derives a geometric confidence when native omits it', () async {
+      // No 'confidence' key (Android/OpenCV) → detector fills it in from geometry.
+      responder = (_) => nativeCorners();
+      final c = await detector.detect(ScanInput.file('/x.jpg'));
+      expect(c!.confidence, isNotNull);
+      expect(c.confidence, inInclusiveRange(0.0, 1.0));
+    });
+
     test('propagates a PlatformException from the native side', () async {
       responder = (_) => throw PlatformException(code: 'BOOM');
       expect(

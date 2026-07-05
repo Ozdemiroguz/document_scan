@@ -20,6 +20,7 @@ class DocumentCorners {
     required this.topRight,
     required this.bottomRight,
     required this.bottomLeft,
+    this.confidence,
   });
 
   /// Top-left corner, normalized 0..1.
@@ -34,13 +35,29 @@ class DocumentCorners {
   /// Bottom-left corner, normalized 0..1.
   final ScanPoint bottomLeft;
 
+  /// How likely this quad is an actual document, in 0..1 (higher is more
+  /// confident), or `null` when no score is available.
+  ///
+  /// The two platforms derive this differently, so treat it as a relative
+  /// ranking signal rather than a calibrated probability:
+  /// - **iOS**: the engine's own value ([VNRectangleObservation.confidence]).
+  /// - **Android**: OpenCV has no probability, so this is a geometric heuristic
+  ///   from the quad's convexity, area and aspect ratio.
+  ///
+  /// Use it to gate capture or route a weak detection to manual adjustment (see
+  /// the auto-capture analyzer), not as a cross-platform absolute.
+  final double? confidence;
+
   /// Builds ordered corners from four points in ANY order.
   ///
   /// Uses the standard sum/diff extremes: the point with the smallest x+y is
   /// the top-left, the largest x+y is the bottom-right; the smallest y−x is the
   /// top-right, the largest y−x is the bottom-left. This is stable regardless of
   /// which engine produced the points.
-  factory DocumentCorners.fromUnordered(List<ScanPoint> points) {
+  factory DocumentCorners.fromUnordered(
+    List<ScanPoint> points, {
+    double? confidence,
+  }) {
     assert(points.length == 4, 'Exactly four points are required.');
     ScanPoint pick(double Function(ScanPoint) key, {required bool max}) {
       var best = points.first;
@@ -60,7 +77,69 @@ class DocumentCorners {
       bottomRight: pick((p) => p.x + p.y, max: true),
       topRight: pick((p) => p.y - p.x, max: false),
       bottomLeft: pick((p) => p.y - p.x, max: true),
+      confidence: confidence,
     );
+  }
+
+  /// A copy of these corners with fields replaced. Handy after a manual corner
+  /// adjustment (new points) or once a [confidence] has been derived.
+  DocumentCorners copyWith({
+    ScanPoint? topLeft,
+    ScanPoint? topRight,
+    ScanPoint? bottomRight,
+    ScanPoint? bottomLeft,
+    double? confidence,
+  }) {
+    return DocumentCorners(
+      topLeft: topLeft ?? this.topLeft,
+      topRight: topRight ?? this.topRight,
+      bottomRight: bottomRight ?? this.bottomRight,
+      bottomLeft: bottomLeft ?? this.bottomLeft,
+      confidence: confidence ?? this.confidence,
+    );
+  }
+
+  /// A geometric confidence heuristic in 0..1 for engines that don't provide a
+  /// probability (e.g. OpenCV on Android).
+  ///
+  /// Combines three cheap sanity signals: the quad must be convex, cover a
+  /// plausible fraction of the frame (neither a speck nor the whole image), and
+  /// have a document-like aspect ratio. Returns a blended score — not a
+  /// calibrated probability, just a relative "does this look like a document"
+  /// ranking, honestly distinct from a native engine's own value.
+  double geometricConfidence() {
+    if (!isConvex) return 0;
+
+    // Area: reward mid-range coverage, penalize tiny specks and full-frame
+    // false positives. Peaks around 15%–85% of the frame.
+    final a = area;
+    final areaScore = (a < 0.02 || a > 0.98)
+        ? 0.0
+        : (a >= 0.15 && a <= 0.85)
+            ? 1.0
+            : 0.6;
+
+    // Aspect ratio from the bounding edges: documents are rectangular-ish, not
+    // extreme slivers. Score falls off past ~4:1.
+    final pts = toList();
+    double edge(int i, int j) {
+      final p = pts[i], q = pts[j];
+      return math.sqrt(math.pow(p.x - q.x, 2) + math.pow(p.y - q.y, 2));
+    }
+
+    final widthAvg = (edge(0, 1) + edge(3, 2)) / 2;
+    final heightAvg = (edge(0, 3) + edge(1, 2)) / 2;
+    final ratio = widthAvg <= 0 || heightAvg <= 0
+        ? 0.0
+        : (widthAvg > heightAvg ? widthAvg / heightAvg : heightAvg / widthAvg);
+    final aspectScore = ratio <= 0
+        ? 0.0
+        : ratio <= 4
+            ? 1.0
+            : (ratio <= 8 ? 0.5 : 0.2);
+
+    // Convex already passed → weight it as a solid base, blend the rest.
+    return (0.4 + 0.35 * areaScore + 0.25 * aspectScore).clamp(0.0, 1.0);
   }
 
   /// Corners in draw order: TL, TR, BR, BL.
@@ -124,5 +203,6 @@ class DocumentCorners {
 
   @override
   String toString() =>
-      'DocumentCorners(TL:$topLeft TR:$topRight BR:$bottomRight BL:$bottomLeft)';
+      'DocumentCorners(TL:$topLeft TR:$topRight BR:$bottomRight BL:$bottomLeft'
+      '${confidence == null ? '' : ', conf:${confidence!.toStringAsFixed(2)}'})';
 }
