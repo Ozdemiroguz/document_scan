@@ -58,10 +58,10 @@ class AutoCaptureState {
 /// produces a single capture — not a burst.
 class AutoCaptureAnalyzer {
   AutoCaptureAnalyzer({
-    this.requiredSteadyFrames = 8,
-    this.minConfidence = 0.6,
-    this.minArea = 0.15,
-    this.maxJitter = 0.02,
+    this.requiredSteadyFrames = 2,
+    this.minConfidence = 0,
+    this.minArea = 0.10,
+    this.maxJitter = 0.08,
   })  : assert(requiredSteadyFrames > 0),
         assert(minConfidence >= 0 && minConfidence <= 1),
         assert(minArea >= 0 && minArea <= 1),
