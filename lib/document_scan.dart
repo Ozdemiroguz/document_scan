@@ -1,6 +1,10 @@
 /// A composable, native-light document scanner for Flutter.
 ///
-/// Two independent pieces you can use together or apart:
+/// Use the one-call [DocumentScanner] for the common case, or compose the
+/// independent pieces yourself:
+///
+/// * [DocumentScanner] — `scan(input)` detects and crops in one call; pass
+///   `corners:` to skip detection and crop user-adjusted corners instead.
 ///
 /// * [DocumentDetector] — finds the four corners of a document in a still image
 ///   or a live camera frame. Backed by the platform's own vision engine
@@ -21,6 +25,7 @@ export 'src/detector/auto_capture_analyzer.dart';
 export 'src/detector/document_detector.dart';
 export 'src/export/document_pdf_exporter.dart';
 export 'src/processor/document_processor.dart';
+export 'src/scanner/document_scanner.dart';
 export 'src/session/scan_session.dart';
 export 'src/types/document_corners.dart';
 export 'src/types/scan_filter.dart';

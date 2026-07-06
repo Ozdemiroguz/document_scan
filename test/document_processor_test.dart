@@ -151,6 +151,33 @@ void main() {
       expect(p.g, closeTo(p.b, 1));
     });
 
+    test('enhance stretches a low-contrast image toward full range', () async {
+      // A flat, low-contrast gray gradient (values ~100..150) — the kind of
+      // dull photographed-paper input where normalize + contrast earn their
+      // keep. After enhance, the histogram should span much closer to 0..255.
+      final dull = img.Image(width: 100, height: 100, numChannels: 3);
+      for (var y = 0; y < 100; y++) {
+        for (var x = 0; x < 100; x++) {
+          final v = 100 + (x * 50 ~/ 100); // 100..150, very low contrast
+          dull.setPixel(x, y, img.ColorRgb8(v, v, v));
+        }
+      }
+      final bytes = Uint8List.fromList(img.encodePng(dull));
+
+      final out = await processor.applyFilter(
+        ScanInput.bytes(bytes, width: 100, height: 100),
+        ScanFilter.enhance,
+      );
+      final result = img.decodePng(out!.bytes)!;
+
+      // Sample the dark and bright ends; the spread must be wider than the
+      // original ~50-level range (contrast + normalize pushed them apart).
+      final darkEnd = result.getPixel(2, 50).r;
+      final brightEnd = result.getPixel(97, 50).r;
+      expect(brightEnd - darkEnd, greaterThan(80),
+          reason: 'enhance should widen the tonal range');
+    });
+
     test('every filter produces valid, non-empty PNG output', () async {
       for (final f in ScanFilter.values) {
         final out = await processor.applyFilter(

@@ -151,6 +151,12 @@ class DocumentProcessor {
         return src;
       case ScanFilter.grayscale:
         return img.grayscale(src);
+      case ScanFilter.enhance:
+        // Grayscale, boost contrast, then stretch the histogram to the full
+        // 0..255 range so gray-ish photographed paper reads as clean white/black.
+        final g = img.grayscale(src);
+        final c = img.adjustColor(g, contrast: 1.5);
+        return img.normalize(c, min: 0, max: 255);
       case ScanFilter.blackWhite:
         // Grayscale then contrast-boost + threshold-ish for a paper look.
         final g = img.grayscale(src);

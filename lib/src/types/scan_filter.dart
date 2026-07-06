@@ -7,6 +7,12 @@ enum ScanFilter {
   /// Desaturate to grayscale — smaller, neutral scans.
   grayscale,
 
+  /// Balanced document clean-up: grayscale, then a contrast boost and a
+  /// full-range normalization (histogram stretch). Gives photographed documents
+  /// a punchier, evenly-lit "scanned" look without the hard binarization of
+  /// [blackWhite] or [magicColor] — a good default for readable, natural scans.
+  enhance,
+
   /// High-contrast black & white — the classic "scanned paper" look.
   blackWhite,
 
