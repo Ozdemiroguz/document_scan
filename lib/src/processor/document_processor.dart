@@ -2,6 +2,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 import '../types/document_corners.dart';
 import '../types/scan_filter.dart';
@@ -38,7 +40,7 @@ class DocumentProcessor {
 
     final warped = _perspectiveWarp(source, corners);
     final filtered = _applyFilter(warped, filter);
-    return _encode(filtered, output);
+    return await _encode(filtered, output);
   }
 
   /// Applies a [filter] to an already-cropped document image, without warping.
@@ -51,21 +53,42 @@ class DocumentProcessor {
     final source = await _decodeToImage(input);
     if (source == null) return null;
     final filtered = _applyFilter(source, filter);
-    return _encode(filtered, output);
+    return await _encode(filtered, output);
   }
 
   // --- encode output ---
 
-  ScannedDocument _encode(img.Image image, ScanOutputFormat output) {
+  Future<ScannedDocument> _encode(
+    img.Image image,
+    ScanOutputFormat output,
+  ) async {
     final bytes = switch (output.codec) {
       ScanImageCodec.png => img.encodePng(image),
       ScanImageCodec.jpeg => img.encodeJpg(image, quality: output.quality),
+      ScanImageCodec.pdf => await _encodePdf(image),
     };
     return ScannedDocument(
       bytes: Uint8List.fromList(bytes),
       width: image.width,
       height: image.height,
     );
+  }
+
+  /// Wraps the scan in a single-page A4 PDF (fit inside the page). PNG-encoded
+  /// internally so the PDF embeds a lossless image.
+  Future<List<int>> _encodePdf(img.Image image) async {
+    final png = Uint8List.fromList(img.encodePng(image));
+    final doc = pw.Document();
+    final pdfImage = pw.MemoryImage(png);
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (_) => pw.Center(
+          child: pw.Image(pdfImage, fit: pw.BoxFit.contain),
+        ),
+      ),
+    );
+    return doc.save();
   }
 
   // --- decode ---

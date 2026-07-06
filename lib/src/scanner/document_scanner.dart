@@ -18,8 +18,9 @@ import '../types/scanned_document.dart';
 ///   to fix a mis-detection); it skips detection and crops with exactly those.
 ///   Call `scan(input, corners: edited)`.
 ///
-/// Both return a [ScannedDocument] (encoded bytes + dimensions) — save it,
-/// show it with `Image.memory`, or hand it to a PDF exporter. The detector and
+/// Both return a [ScannedDocument] (encoded bytes + dimensions) — save it or
+/// show it with `Image.memory`. Pass `output: ScanOutputFormat.pdf` to get the
+/// scan back as a single-page PDF instead of an image. The detector and
 /// processor are injectable for testing.
 class DocumentScanner {
   DocumentScanner({

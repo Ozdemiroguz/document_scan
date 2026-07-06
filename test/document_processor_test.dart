@@ -252,6 +252,17 @@ void main() {
       expect(jpeg.width, 80);
     });
 
+    test('PDF output emits a valid single-page PDF', () async {
+      final out = await processor.crop(
+        ScanInput.bytes(src, width: 80, height: 80),
+        fullFrame,
+        output: ScanOutputFormat.pdf,
+      );
+      // PDF magic header: %PDF-
+      expect(out!.bytes.sublist(0, 5), [0x25, 0x50, 0x44, 0x46, 0x2D]);
+      expect(out.bytes.length, greaterThan(100));
+    });
+
     test('lower JPEG quality yields fewer bytes on a detailed image', () async {
       // A noisy image so JPEG quality actually affects size (flat colors don't).
       final noisy = img.Image(width: 120, height: 120, numChannels: 3);
