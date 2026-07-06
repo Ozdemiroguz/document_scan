@@ -1,3 +1,5 @@
+import CoreImage
+import CoreVideo
 import Flutter
 import UIKit
 import Vision
@@ -17,6 +19,14 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
   private let stateQueue = DispatchQueue(label: "com.oguzhan.document_scan.state")
   private let workQueue = DispatchQueue(
     label: "com.oguzhan.document_scan.work", qos: .userInitiated)
+
+  // Downscales each realtime frame before Vision runs, so a full-res (~8 MB at
+  // 1080p) per-frame CVPixelBuffer is never allocated and rectangle detection
+  // runs at 720px instead of 1080p. Corners are normalized, so the reduced
+  // resolution doesn't change the result. Stateful (reused CIContext + pooled
+  // buffers); only touched from the serial workQueue, so no extra locking.
+  private let downscaler = PixelBufferDownscaler()
+  private let frameMaxLongSide = 720
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(
@@ -91,9 +101,13 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
 
     workQueue.async { [weak self] in
       autoreleasepool {
-        defer { self?.releaseSlot() }
-        guard let buffer = Self.makePixelBuffer(
-          bytes: bytes, width: width, height: height, bytesPerRow: bytesPerRow) else {
+        guard let self = self else { return }
+        defer { self.releaseSlot() }
+        // Downscale into a small pooled buffer inside the autoreleasepool (the
+        // CIContext render produces temporaries). Vision then runs at 720px.
+        guard let buffer = self.downscaler.downscale(
+          bytes: bytes, width: width, height: height,
+          bytesPerRow: bytesPerRow, maxLongSide: self.frameMaxLongSide) else {
           DispatchQueue.main.async { result(nil) }
           return
         }
@@ -162,30 +176,6 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
 
   // MARK: - Helpers
 
-  private static func makePixelBuffer(
-    bytes: Data, width: Int, height: Int, bytesPerRow: Int
-  ) -> CVPixelBuffer? {
-    var pixelBuffer: CVPixelBuffer?
-    let attrs: [String: Any] = [kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any]]
-    let status = CVPixelBufferCreate(
-      kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA,
-      attrs as CFDictionary, &pixelBuffer)
-    guard status == kCVReturnSuccess, let buffer = pixelBuffer else { return nil }
-    CVPixelBufferLockBaseAddress(buffer, [])
-    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-    guard let dest = CVPixelBufferGetBaseAddress(buffer) else { return nil }
-    let destStride = CVPixelBufferGetBytesPerRow(buffer)
-    bytes.withUnsafeBytes { src in
-      guard let base = src.baseAddress else { return }
-      for row in 0..<height {
-        memcpy(dest.advanced(by: row * destStride),
-               base.advanced(by: row * bytesPerRow),
-               min(bytesPerRow, destStride))
-      }
-    }
-    return buffer
-  }
-
   private func readOrientation(source: CGImageSource) -> CGImagePropertyOrientation {
     guard let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
           let raw = props[kCGImagePropertyOrientation] as? UInt32,
@@ -198,5 +188,78 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
   }
   private func releaseSlot() {
     stateQueue.sync { frameBusy = false }
+  }
+}
+
+/// Downscales realtime frame bytes into a small pooled `CVPixelBuffer` before
+/// Vision runs, so a full-resolution (~8 MB at 1080p) buffer is never allocated
+/// per frame and detection runs at a reduced resolution.
+///
+/// A single `CIContext` (GPU/Metal-backed, expensive to build) and a
+/// `CVPixelBufferPool` are reused across frames — the pool is recreated only
+/// when the output dimensions change (i.e. once). Not thread-safe on its own;
+/// the plugin only touches it from its serial work queue.
+private final class PixelBufferDownscaler {
+  private let context: CIContext
+  private var pool: CVPixelBufferPool?
+  private var poolWidth = 0
+  private var poolHeight = 0
+
+  init() {
+    // No color management — we're scaling raw camera BGRA for detection, not
+    // display, so skip the working-space conversions for speed.
+    context = CIContext(options: [
+      .workingColorSpace: NSNull(),
+      .outputColorSpace: NSNull(),
+    ])
+  }
+
+  /// Scale a single-plane 32BGRA image into a new BGRA buffer whose long side is
+  /// at most `maxLongSide`. Returns nil on failure; copies at full size (still
+  /// pooled) if already small enough.
+  func downscale(
+    bytes: Data, width: Int, height: Int, bytesPerRow: Int, maxLongSide: Int
+  ) -> CVPixelBuffer? {
+    let longSide = max(width, height)
+    let scale = (maxLongSide > 0 && longSide > maxLongSide)
+      ? Double(maxLongSide) / Double(longSide) : 1.0
+    // Keep dimensions even and non-zero.
+    let outW = max(2, (Int(Double(width) * scale) / 2) * 2)
+    let outH = max(2, (Int(Double(height) * scale) / 2) * 2)
+
+    guard let output = makeBuffer(width: outW, height: outH) else { return nil }
+
+    // CIImage(bitmapData:) copies the bytes, so `bytes` needn't outlive this.
+    let sourceImage = CIImage(
+      bitmapData: bytes, bytesPerRow: bytesPerRow,
+      size: CGSize(width: width, height: height), format: .BGRA8, colorSpace: nil)
+    let scaled = scale == 1.0
+      ? sourceImage
+      : sourceImage.transformed(by: CGAffineTransform(scaleX: CGFloat(scale), y: CGFloat(scale)))
+
+    context.render(scaled, to: output)
+    return output
+  }
+
+  private func makeBuffer(width: Int, height: Int) -> CVPixelBuffer? {
+    if pool == nil || width != poolWidth || height != poolHeight {
+      let attrs: [String: Any] = [
+        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+        kCVPixelBufferWidthKey as String: width,
+        kCVPixelBufferHeightKey as String: height,
+        kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any],
+      ]
+      var newPool: CVPixelBufferPool?
+      guard CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attrs as CFDictionary, &newPool)
+        == kCVReturnSuccess, let created = newPool else { return nil }
+      pool = created
+      poolWidth = width
+      poolHeight = height
+    }
+    guard let pool = pool else { return nil }
+    var buffer: CVPixelBuffer?
+    guard CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &buffer)
+      == kCVReturnSuccess else { return nil }
+    return buffer
   }
 }

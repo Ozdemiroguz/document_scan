@@ -9,6 +9,7 @@ import android.graphics.YuvImage
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
@@ -115,6 +116,10 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
                         }
                         mainHandler.post { result.success(corners) }
                     } catch (e: Exception) {
+                        // Per-frame hot path: a failure means "drop this frame"
+                        // (null), but log it so a real crash (OOM, OpenCV) isn't
+                        // invisible.
+                        Log.w(TAG, "Frame detection failed", e)
                         mainHandler.post { result.success(null) }
                     } finally {
                         frameBusy = false
@@ -184,9 +189,26 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
         }
         val yuvMat = Mat(height + height / 2, width, CvType.CV_8UC1)
         yuvMat.put(0, 0, nv21)
-        val bgr = Mat()
+        var bgr = Mat()
         Imgproc.cvtColor(yuvMat, bgr, Imgproc.COLOR_YUV2BGR_NV21)
         yuvMat.release()
+
+        // Downscale the BGR Mat during conversion so a full-res (e.g. 1080p
+        // ~6MB) Mat is never kept for the per-frame edge pipeline. Corners come
+        // out normalized, so the source scale doesn't change the result — this
+        // is the main lever for per-frame Large-Object-Space GC pressure.
+        val longSide = maxOf(width, height)
+        if (longSide > FRAME_MAX_LONG_SIDE) {
+            val scale = FRAME_MAX_LONG_SIDE.toDouble() / longSide
+            val small = Mat()
+            Imgproc.resize(
+                bgr, small,
+                Size(width * scale, height * scale),
+                0.0, 0.0, Imgproc.INTER_AREA,
+            )
+            bgr.release()
+            bgr = small
+        }
         return detectAndNormalize(bgr, rotation)
     }
 
@@ -214,10 +236,18 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
             270 -> Mat().also { Core.rotate(mat, it, Core.ROTATE_90_COUNTERCLOCKWISE); mat.release() }
             else -> mat
         }
-        val fw = rotated.cols().toDouble()
-        val fh = rotated.rows().toDouble()
-        val contours = findContours(rotated)
-        rotated.release()
+
+        // Cap the long side before the (expensive) Canny/contour pipeline. The
+        // YUV path arrives pre-scaled (see detectFromYuv), so this is a no-op
+        // there; it's the safety net for the BGRA/emulator paths, which hand in
+        // a full-res Mat. Corners are normalized, so the cap doesn't shift them.
+        val work = downscaleMat(rotated, FRAME_MAX_LONG_SIDE)
+        if (work != rotated) rotated.release()
+
+        val fw = work.cols().toDouble()
+        val fh = work.rows().toDouble()
+        val contours = findContours(work)
+        work.release()
         if (contours.isEmpty()) return null
         val quad = findBestQuad(contours) ?: return null
         val o = orderCorners(quad)
@@ -227,6 +257,22 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
             "bottomRightX" to (o[2].x / fw).coerceIn(0.0, 1.0), "bottomRightY" to (o[2].y / fh).coerceIn(0.0, 1.0),
             "bottomLeftX" to (o[3].x / fw).coerceIn(0.0, 1.0), "bottomLeftY" to (o[3].y / fh).coerceIn(0.0, 1.0),
         )
+    }
+
+    /** Downscale a Mat so its long side is at most [maxLongSide]; returns the
+     *  SAME Mat when already small enough (caller checks identity before
+     *  releasing). Corners are normalized, so scale doesn't shift them. */
+    private fun downscaleMat(src: Mat, maxLongSide: Int): Mat {
+        val longSide = maxOf(src.cols(), src.rows())
+        if (longSide <= maxLongSide) return src
+        val scale = maxLongSide.toDouble() / longSide
+        val dst = Mat()
+        Imgproc.resize(
+            src, dst,
+            Size(src.cols() * scale, src.rows() * scale),
+            0.0, 0.0, Imgproc.INTER_AREA,
+        )
+        return dst
     }
 
     // --- Proven OpenCV edge pipeline ---
@@ -328,12 +374,24 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
     private fun isEmulator(): Boolean {
         val fp = Build.FINGERPRINT.lowercase()
         val model = Build.MODEL.lowercase()
+        val manufacturer = Build.MANUFACTURER.lowercase()
+        val brand = Build.BRAND.lowercase()
+        val device = Build.DEVICE.lowercase()
+        val product = Build.PRODUCT.lowercase()
         return fp.contains("generic") || fp.contains("emulator") ||
             model.contains("emulator") || model.contains("sdk") ||
-            Build.PRODUCT.lowercase().let { it.contains("sdk") || it.contains("emulator") }
+            manufacturer.contains("genymotion") ||
+            (brand.startsWith("generic") && device.startsWith("generic")) ||
+            product.contains("sdk") || product.contains("emulator")
     }
 
     companion object {
+        private const val TAG = "DocumentScan"
         private const val CHANNEL = "com.oguzhan.document_scan/detector"
+
+        // Cap the long side of a realtime frame before the edge pipeline runs.
+        // Document edges are easily found at 720px, and the per-frame Mat/buffer
+        // and detection cost both shrink from 1080p.
+        private const val FRAME_MAX_LONG_SIDE = 720
     }
 }
