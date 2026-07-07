@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'document_scan'
-  s.version          = '0.1.0'
+  s.version          = '0.1.1'
   s.summary          = 'Composable, native-light document scanner: corner detection + perspective correction, for realtime camera and static images.'
   s.description      = <<-DESC
 Composable, native-light document scanner: corner detection + perspective correction, for realtime camera and static images. On iOS the detector uses Apple Vision — a system framework, so no bundled model and zero added binary.

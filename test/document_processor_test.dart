@@ -437,6 +437,32 @@ void main() {
       expect(out.bytes.length, greaterThan(100));
     });
 
+    test('pagesToPdf combines N scans into an N-page PDF', () async {
+      // Three image scans (as a multi-page ScanSession would collect).
+      final pages = <ScannedDocument>[];
+      for (var i = 0; i < 3; i++) {
+        final page = await processor.crop(
+          ScanInput.bytes(src, width: 80, height: 80),
+          fullFrame,
+          output: const ScanOutputFormat.jpegAt(80),
+        );
+        pages.add(page!);
+      }
+
+      final pdf = await processor.pagesToPdf(pages);
+      expect(pdf, isNotNull);
+      // Valid PDF header.
+      expect(pdf!.bytes.sublist(0, 5), [0x25, 0x50, 0x44, 0x46, 0x2D]);
+      // Count `/Type /Page` (not /Pages) objects — one per scan.
+      final text = String.fromCharCodes(pdf.bytes);
+      final pageCount = RegExp(r'/Type\s*/Page[^s]').allMatches(text).length;
+      expect(pageCount, 3);
+    });
+
+    test('pagesToPdf returns null for an empty list', () async {
+      expect(await processor.pagesToPdf([]), isNull);
+    });
+
     test('lower JPEG quality yields fewer bytes on a detailed image', () async {
       // A noisy image so JPEG quality actually affects size (flat colors don't).
       final noisy = img.Image(width: 120, height: 120, numChannels: 3);

@@ -152,17 +152,49 @@ class DocumentProcessor {
   /// internally so the PDF embeds a lossless image.
   Future<List<int>> _encodePdf(img.Image image) async {
     final png = Uint8List.fromList(img.encodePng(image));
+    return _pdfFromEncodedPages([png]);
+  }
+
+  /// Builds a PDF with one A4 page per entry in [encodedImages]. Each entry is
+  /// already-encoded PNG/JPEG bytes, embedded as-is (no re-encode).
+  Future<List<int>> _pdfFromEncodedPages(List<Uint8List> encodedImages) async {
     final doc = pw.Document();
-    final pdfImage = pw.MemoryImage(png);
-    doc.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (_) => pw.Center(
-          child: pw.Image(pdfImage, fit: pw.BoxFit.contain),
+    for (final bytes in encodedImages) {
+      final pdfImage = pw.MemoryImage(bytes);
+      doc.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          build: (_) => pw.Center(
+            child: pw.Image(pdfImage, fit: pw.BoxFit.contain),
+          ),
         ),
-      ),
-    );
+      );
+    }
     return doc.save();
+  }
+
+  /// Combines several scanned pages into one multi-page PDF — one A4 page per
+  /// scan, in order. Pass the pages from a [ScanSession] (or any list of
+  /// [ScannedDocument]s) you've collected.
+  ///
+  /// Each page's [ScannedDocument.bytes] is embedded directly, so give it image
+  /// scans (`ScanOutputFormat.png` / `.jpeg`) — not PDFs. Returns null if
+  /// [pages] is empty.
+  ///
+  /// This is the multi-page counterpart to `output: ScanOutputFormat.pdf`, which
+  /// produces a single-page PDF from one crop.
+  Future<ScannedDocument?> pagesToPdf(List<ScannedDocument> pages) async {
+    if (pages.isEmpty) return null;
+    final pdfBytes = await _pdfFromEncodedPages(
+      [for (final p in pages) p.bytes],
+    );
+    // A PDF has no single pixel size; report the first page's dimensions so the
+    // ScannedDocument stays well-formed.
+    return ScannedDocument(
+      bytes: Uint8List.fromList(pdfBytes),
+      width: pages.first.width,
+      height: pages.first.height,
+    );
   }
 
   // --- decode ---

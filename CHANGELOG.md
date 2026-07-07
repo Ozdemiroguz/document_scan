@@ -1,3 +1,11 @@
+## 0.1.1
+
+- `DocumentProcessor.pagesToPdf(List<ScannedDocument>)` — combine several
+  scanned pages into one multi-page PDF (one A4 page per scan, in order). The
+  multi-page counterpart to `output: ScanOutputFormat.pdf`; pass the pages you
+  collected in a `ScanSession`. Each page's bytes are embedded as-is (no
+  re-encode); returns null for an empty list.
+
 ## 0.1.0
 
 Initial release.
