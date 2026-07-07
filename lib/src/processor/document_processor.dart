@@ -32,6 +32,12 @@ class DocumentProcessor {
   /// Perspective-corrects the document bounded by [corners] out of [input] and
   /// returns it as an upright rectangle. [filter] post-processes the result.
   ///
+  /// Note: [filter] defaults to [ScanFilter.none] here (this is the raw
+  /// primitive — it does exactly what you ask). The high-level
+  /// [DocumentScanner.scan] instead defaults to [ScanFilter.enhance] for a
+  /// clean "scanned" look out of the box, so if you drop from the façade to
+  /// this method to reproduce the same result, pass `filter: ScanFilter.enhance`.
+  ///
   /// [corners] are normalized 0..1 relative to [input]'s image. The output
   /// resolution matches the document's real edge lengths, so a near-square card
   /// and a tall page both come out proportioned correctly — but the long side is
