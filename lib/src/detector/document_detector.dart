@@ -15,8 +15,8 @@ import 'detection_event.dart';
 /// too. It never opens a camera; you feed it images or frames.
 ///
 /// Degrades gracefully: if the platform can't detect (or isn't implemented),
-/// [detect] returns `null` and [detectStream] simply emits nothing for that
-/// frame, rather than throwing.
+/// [detect] returns `null` and [detectStream] emits a [NoDocument] (or a
+/// [DetectionError] carrying the failure) for that frame, rather than throwing.
 class DocumentDetector {
   /// Creates a detector. [channel] is injectable for tests.
   DocumentDetector({MethodChannel? channel})
@@ -147,14 +147,31 @@ class DocumentDetector {
 
   DocumentCorners? _decode(Map<String, dynamic>? r) {
     if (r == null) return null;
-    double v(String k) => (r[k] as num).toDouble();
+    // A malformed reply (a missing or non-numeric coordinate key) means "no
+    // usable detection", not a crash — treat it as null rather than letting a
+    // cast error escape `detect`.
+    num? n(String k) => r[k] is num ? r[k] as num : null;
+    final tlx = n('topLeftX'), tly = n('topLeftY');
+    final trx = n('topRightX'), tryy = n('topRightY');
+    final brx = n('bottomRightX'), bry = n('bottomRightY');
+    final blx = n('bottomLeftX'), bly = n('bottomLeftY');
+    if (tlx == null ||
+        tly == null ||
+        trx == null ||
+        tryy == null ||
+        brx == null ||
+        bry == null ||
+        blx == null ||
+        bly == null) {
+      return null;
+    }
     // The native side returns four points; order them here so the engine's
     // vertex order is irrelevant.
     final corners = DocumentCorners.fromUnordered([
-      (x: v('topLeftX'), y: v('topLeftY')),
-      (x: v('topRightX'), y: v('topRightY')),
-      (x: v('bottomRightX'), y: v('bottomRightY')),
-      (x: v('bottomLeftX'), y: v('bottomLeftY')),
+      (x: tlx.toDouble(), y: tly.toDouble()),
+      (x: trx.toDouble(), y: tryy.toDouble()),
+      (x: brx.toDouble(), y: bry.toDouble()),
+      (x: blx.toDouble(), y: bly.toDouble()),
     ]);
 
     // Confidence: prefer the engine's own value when the platform supplies one

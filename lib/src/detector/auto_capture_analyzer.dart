@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import '../types/document_corners.dart';
+import 'detection_event.dart';
 
 /// Where the auto-capture state machine currently is.
 enum AutoCaptureStatus {
@@ -133,9 +134,43 @@ class AutoCaptureAnalyzer {
     );
   }
 
-  /// Convenience: transform a detection stream into a state stream.
+  /// Convenience: transform a raw corner stream into a state stream.
   Stream<AutoCaptureState> bind(Stream<DocumentCorners?> detections) {
     return detections.map(add);
+  }
+
+  /// Feeds a [DetectionEvent] (as produced by [DocumentDetector.detectStream])
+  /// and returns the resulting capture state — so the detector's stream pipes
+  /// straight into auto-capture without the caller flattening events to
+  /// `DocumentCorners?` (which would erase the [FrameDropped] / [DetectionError]
+  /// distinction the event type exists to preserve).
+  ///
+  /// - [DocumentDetected] advances the steadiness/qualification logic as usual.
+  /// - [NoDocument] and [DetectionError] are treated as "no document this frame"
+  ///   (the countdown resets), the same as feeding `null` to [add].
+  /// - [FrameDropped] is a backpressure skip, not a detection result, so it
+  ///   holds the current state unchanged rather than resetting the countdown.
+  AutoCaptureState addEvent(DetectionEvent event) {
+    return switch (event) {
+      DocumentDetected(:final corners) => add(corners),
+      NoDocument() || DetectionError() => add(null),
+      // A dropped frame carries no information — keep the state we already have.
+      FrameDropped() => AutoCaptureState(
+          status: _latched
+              ? AutoCaptureStatus.ready
+              : (_steady > 0
+                  ? AutoCaptureStatus.detecting
+                  : AutoCaptureStatus.searching),
+          corners: _last,
+          steadyFrames: _steady,
+        ),
+    };
+  }
+
+  /// Convenience: pipe a [DocumentDetector.detectStream] output straight into a
+  /// capture-state stream, preserving the event distinctions (see [addEvent]).
+  Stream<AutoCaptureState> bindEvents(Stream<DetectionEvent> events) {
+    return events.map(addEvent);
   }
 
   /// Clears accumulated steadiness (e.g. after you've captured and want the next

@@ -130,6 +130,28 @@ void main() {
       expect(c, isNull);
     });
 
+    test('returns null (not a crash) on a malformed reply', () async {
+      // A reply missing a coordinate key must degrade to "no detection", not
+      // throw a cast error out of detect().
+      responder = (_) => {
+            'topLeftX': 0.1, 'topLeftY': 0.1,
+            'topRightX': 0.9, // topRightY missing
+            'bottomRightX': 0.9, 'bottomRightY': 0.9,
+            'bottomLeftX': 0.1, 'bottomLeftY': 0.9,
+          };
+      final c = await detector.detect(ScanInput.file('/x.jpg'));
+      expect(c, isNull);
+    });
+
+    test('returns null when a coordinate is a non-number', () async {
+      responder = (_) => {
+            ...nativeCorners(),
+            'topLeftX': 'oops', // wrong type
+          };
+      final c = await detector.detect(ScanInput.file('/x.jpg'));
+      expect(c, isNull);
+    });
+
     test('prefers the native confidence when the platform supplies one', () async {
       responder = (_) => {...nativeCorners(), 'confidence': 0.42};
       final c = await detector.detect(ScanInput.file('/x.jpg'));
