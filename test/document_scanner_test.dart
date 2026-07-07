@@ -106,4 +106,27 @@ void main() {
     // JPEG magic bytes.
     expect(out!.bytes.sublist(0, 2), [0xFF, 0xD8]);
   });
+
+  group('background execution (façade default is true)', () {
+    test('the default (background: true) crops on an isolate without crashing',
+        () async {
+      final out = await scanner().scan(
+        ScanInput.bytes(_png(160, 120), width: 160, height: 120),
+        corners: _fullFrame, // corners given → crop runs in the isolate
+      );
+      expect(out, isNotNull);
+      expect(out!.bytes, isNotEmpty);
+    });
+
+    test('background: true and false produce identical bytes', () async {
+      final input = ScanInput.bytes(_png(160, 120), width: 160, height: 120);
+      final bg = await scanner().scan(input, corners: _fullFrame);
+      final fg = await scanner().scan(
+        input,
+        corners: _fullFrame,
+        background: false,
+      );
+      expect(bg!.bytes, equals(fg!.bytes));
+    });
+  });
 }

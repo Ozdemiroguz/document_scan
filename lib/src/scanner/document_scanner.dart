@@ -49,12 +49,21 @@ class DocumentScanner {
   /// clean scanned look); [output] picks the encoding (default PNG).
   /// [maxDimension] caps the output's long side (see [DocumentProcessor.crop]);
   /// pass `null` to warp at full resolution.
+  ///
+  /// [background] runs the CPU-heavy crop on a background isolate so the UI
+  /// stays responsive — it defaults to `true` here because this façade is the
+  /// simple, opinionated entry point and a full-frame crop otherwise janks the
+  /// UI. (Detection stays on this isolate regardless: it's a native platform
+  /// channel, already off the UI thread, and can't run inside an isolate.) Pass
+  /// `false` if you're already calling this from your own background isolate, to
+  /// avoid a redundant isolate hop.
   Future<ScannedDocument?> scan(
     ScanInput input, {
     DocumentCorners? corners,
     ScanFilter filter = ScanFilter.enhance,
     ScanOutputFormat output = ScanOutputFormat.png,
     int? maxDimension = DocumentProcessor.defaultMaxDimension,
+    bool background = true,
   }) async {
     final quad = corners ?? await _detector.detect(input);
     if (quad == null) return null;
@@ -64,6 +73,7 @@ class DocumentScanner {
       filter: filter,
       output: output,
       maxDimension: maxDimension,
+      background: background,
     );
   }
 

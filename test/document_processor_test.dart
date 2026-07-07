@@ -212,6 +212,90 @@ void main() {
     });
   });
 
+  group('background: isolate execution', () {
+    // A quad + colored content so the warp does real work, exercised on both
+    // the foreground and background paths.
+    final quad = [
+      (x: 0.15, y: 0.10),
+      (x: 0.88, y: 0.18),
+      (x: 0.82, y: 0.92),
+      (x: 0.12, y: 0.80),
+    ];
+
+    test('crop(background: true) runs on an isolate without crashing', () async {
+      final bytes = _pngImage(
+        240,
+        200,
+        quad: quad,
+        quadColor: img.ColorRgb8(200, 30, 30),
+      );
+      final out = await processor.crop(
+        ScanInput.bytes(bytes, width: 240, height: 200),
+        DocumentCorners.fromUnordered(quad),
+        filter: ScanFilter.enhance,
+        background: true,
+      );
+      expect(out, isNotNull);
+      expect(out!.bytes, isNotEmpty);
+    });
+
+    test('crop(background: true) is byte-identical to background: false',
+        () async {
+      final bytes = _pngImage(
+        240,
+        200,
+        quad: quad,
+        quadColor: img.ColorRgb8(200, 30, 30),
+      );
+      final input = ScanInput.bytes(bytes, width: 240, height: 200);
+      final corners = DocumentCorners.fromUnordered(quad);
+
+      final fg = await processor.crop(
+        input,
+        corners,
+        filter: ScanFilter.enhance,
+        output: const ScanOutputFormat.jpegAt(85),
+      );
+      final bg = await processor.crop(
+        input,
+        corners,
+        filter: ScanFilter.enhance,
+        output: const ScanOutputFormat.jpegAt(85),
+        background: true,
+      );
+
+      expect(fg, isNotNull);
+      expect(bg, isNotNull);
+      // Same pixels, same encode → identical bytes: the isolate path is a pure
+      // relocation of the same work, not a different result.
+      expect(bg!.width, fg!.width);
+      expect(bg.height, fg.height);
+      expect(bg.bytes, equals(fg.bytes));
+    });
+
+    test('applyFilter(background: true) matches background: false', () async {
+      final bytes = _pngImage(120, 90, background: img.ColorRgb8(180, 120, 60));
+      final input = ScanInput.bytes(bytes, width: 120, height: 90);
+
+      final fg = await processor.applyFilter(input, ScanFilter.grayscale);
+      final bg = await processor.applyFilter(
+        input,
+        ScanFilter.grayscale,
+        background: true,
+      );
+      expect(bg!.bytes, equals(fg!.bytes));
+    });
+
+    test('background path preserves the null-on-undecodable contract', () async {
+      final out = await processor.crop(
+        ScanInput.bytes(Uint8List.fromList([9, 9, 9]), width: 4, height: 4),
+        fullFrame,
+        background: true,
+      );
+      expect(out, isNull);
+    });
+  });
+
   group('applyFilter()', () {
     late Uint8List colorful;
 

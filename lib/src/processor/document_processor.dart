@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -45,6 +46,14 @@ class DocumentProcessor {
   /// warp at full resolution) so a near-full-frame high-megapixel photo doesn't
   /// produce a needlessly huge, slow warp. The aspect ratio is preserved.
   ///
+  /// The warp + filter + encode is pure-Dart CPU work — on a full-frame photo it
+  /// takes long enough to jank the UI. Pass [background] `true` to run it on a
+  /// background isolate (via `Isolate.run`) so the caller's thread stays
+  /// responsive; the default `false` runs it on the current isolate (right when
+  /// you're already on a background isolate, or the image is small). This is a
+  /// primitive, so it defaults to foreground — the [DocumentScanner.scan] façade
+  /// defaults `background` to `true` for you.
+  ///
   /// Returns `null` if the input image can't be decoded.
   Future<ScannedDocument?> crop(
     ScanInput input,
@@ -52,30 +61,73 @@ class DocumentProcessor {
     ScanFilter filter = ScanFilter.none,
     ScanOutputFormat output = ScanOutputFormat.png,
     int? maxDimension = defaultMaxDimension,
-  }) async {
+    bool background = false,
+  }) {
     assert(
       maxDimension == null || maxDimension >= 1,
       'maxDimension must be null (uncapped) or >= 1.',
     );
+    // Everything captured is sendable (value types + a path/bytes), and the
+    // processor is reconstructed inside the isolate rather than captured, so the
+    // whole job runs cleanly on a spawned isolate.
+    if (background) {
+      return Isolate.run(
+        () => const DocumentProcessor()._cropSync(
+          input,
+          corners,
+          filter,
+          output,
+          maxDimension,
+        ),
+      );
+    }
+    return _cropSync(input, corners, filter, output, maxDimension);
+  }
+
+  Future<ScannedDocument?> _cropSync(
+    ScanInput input,
+    DocumentCorners corners,
+    ScanFilter filter,
+    ScanOutputFormat output,
+    int? maxDimension,
+  ) async {
     final source = await _decodeToImage(input);
     if (source == null) return null;
 
     final warped = _perspectiveWarp(source, corners, maxDimension: maxDimension);
     final filtered = _applyFilter(warped, filter);
-    return await _encode(filtered, output);
+    return _encode(filtered, output);
   }
 
   /// Applies a [filter] to an already-cropped document image, without warping.
   /// Useful for re-filtering a scan the user already cropped.
+  ///
+  /// [background] mirrors [crop]: `true` runs the decode + filter + encode on a
+  /// background isolate so the UI stays responsive; the default `false` runs it
+  /// on the current isolate.
   Future<ScannedDocument?> applyFilter(
     ScanInput input,
     ScanFilter filter, {
     ScanOutputFormat output = ScanOutputFormat.png,
-  }) async {
+    bool background = false,
+  }) {
+    if (background) {
+      return Isolate.run(
+        () => const DocumentProcessor()._applyFilterSync(input, filter, output),
+      );
+    }
+    return _applyFilterSync(input, filter, output);
+  }
+
+  Future<ScannedDocument?> _applyFilterSync(
+    ScanInput input,
+    ScanFilter filter,
+    ScanOutputFormat output,
+  ) async {
     final source = await _decodeToImage(input);
     if (source == null) return null;
     final filtered = _applyFilter(source, filter);
-    return await _encode(filtered, output);
+    return _encode(filtered, output);
   }
 
   // --- encode output ---
