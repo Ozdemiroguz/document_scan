@@ -57,6 +57,9 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
   String? _error;
   String _hint = 'Starting camera…';
   bool _ready = false;
+  // Set synchronously at the top of _start() (before any await) so two rapid
+  // resume events can't both build a controller and leak the first.
+  bool _starting = false;
 
   @override
   void initState() {
@@ -67,8 +70,12 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
 
   Future<void> _start() async {
     // Guard against a double-start (e.g. rapid resume events) leaking a
-    // controller — tear the previous one down first.
-    if (_controller != null) return;
+    // controller. _controller is only assigned after two awaits below, so a
+    // second call in that window would slip past a `_controller != null` check
+    // and build a second controller; the synchronous `_starting` latch closes
+    // that race.
+    if (_controller != null || _starting) return;
+    _starting = true;
     try {
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
@@ -130,6 +137,8 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
       _fail('Camera unavailable: ${e.description ?? e.code}.');
     } catch (e) {
       _fail('Could not start the camera: $e');
+    } finally {
+      _starting = false;
     }
   }
 
@@ -218,14 +227,15 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
-    // Release the camera when backgrounded; restart when resumed.
+    // Release the camera when backgrounded, restart when resumed. Note: the
+    // resume branch must NOT be gated on `_controller != null` — teardown nulls
+    // the controller, so gating there would swallow the resume and leave the
+    // screen stuck on the "camera off" placeholder forever.
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
-      _teardown();
+      if (_controller != null) _teardown();
     } else if (state == AppLifecycleState.resumed) {
-      _start();
+      _start(); // no-op if already running (guarded inside _start)
     }
   }
 
