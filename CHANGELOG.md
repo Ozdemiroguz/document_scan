@@ -7,8 +7,8 @@ Initial release.
 - `DocumentDetector` — document corner detection for still images (`detect`) and
   live camera frames (`detectStream`), backed by Apple Vision on iOS and OpenCV
   on Android, with per-frame downscaling for realtime performance. `detectStream`
-  emits a sealed `DetectionEvent` (`DocumentDetected` / `NoDocument` /
-  `FrameDropped` / `DetectionError`) so a consumer can tell an empty scene from a
+  emits a sealed `DetectionEvent` (`DetectionSuccess` / `DetectionEmpty` /
+  `DetectionSkipped` / `DetectionError`) so a consumer can tell an empty scene from a
   backpressure drop from a native error, rather than a blind `null`. Corners
   carry a `confidence` (engine value on iOS, geometric heuristic on Android).
 - `CornerStabilizer` — optional EMA smoothing for the live corner stream, so an

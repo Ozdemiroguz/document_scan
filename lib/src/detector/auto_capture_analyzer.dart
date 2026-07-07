@@ -154,20 +154,20 @@ class AutoCaptureAnalyzer {
   /// Feeds a [DetectionEvent] (as produced by [DocumentDetector.detectStream])
   /// and returns the resulting capture state — so the detector's stream pipes
   /// straight into auto-capture without the caller flattening events to
-  /// `DocumentCorners?` (which would erase the [FrameDropped] / [DetectionError]
+  /// `DocumentCorners?` (which would erase the [DetectionSkipped] / [DetectionError]
   /// distinction the event type exists to preserve).
   ///
-  /// - [DocumentDetected] advances the steadiness/qualification logic as usual.
-  /// - [NoDocument] and [DetectionError] are treated as "no document this frame"
+  /// - [DetectionSuccess] advances the steadiness/qualification logic as usual.
+  /// - [DetectionEmpty] and [DetectionError] are treated as "no document this frame"
   ///   (the countdown resets), the same as feeding `null` to [add].
-  /// - [FrameDropped] is a backpressure skip, not a detection result, so it
+  /// - [DetectionSkipped] is a backpressure skip, not a detection result, so it
   ///   holds the current state unchanged rather than resetting the countdown.
   AutoCaptureState addEvent(DetectionEvent event) {
     return switch (event) {
-      DocumentDetected(:final corners) => add(corners),
-      NoDocument() || DetectionError() => add(null),
+      DetectionSuccess(:final corners) => add(corners),
+      DetectionEmpty() || DetectionError() => add(null),
       // A dropped frame carries no information — keep the state we already have.
-      FrameDropped() => AutoCaptureState(
+      DetectionSkipped() => AutoCaptureState(
           status: _latched
               ? AutoCaptureStatus.ready
               : (_steady > 0

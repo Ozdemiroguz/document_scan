@@ -6,17 +6,21 @@ import '../types/document_corners.dart';
 /// produced no corners — "no document in view" reads the same as "the frame was
 /// dropped under load" or "native detection threw". This sealed type keeps those
 /// cases distinct so you can react correctly: show a "hold steady" hint for
-/// [NoDocument], ignore [FrameDropped] as normal backpressure, and log/report a
-/// [DetectionError] instead of silently treating a persistent native failure as
-/// an empty scene.
+/// [DetectionEmpty], ignore [DetectionSkipped] as normal backpressure, and
+/// log/report a [DetectionError] instead of silently treating a persistent
+/// native failure as an empty scene.
+///
+/// The variant names share the `Detection` prefix so they read as a family and
+/// don't collide with generic identifiers when the package is imported without
+/// a prefix.
 ///
 /// Pattern-match it:
 /// ```dart
 /// detector.detectStream(frames).listen((event) {
 ///   switch (event) {
-///     case DocumentDetected(:final corners): overlay.show(corners);
-///     case NoDocument():                     overlay.hint('Point at a document');
-///     case FrameDropped():                   /* normal under load — ignore */;
+///     case DetectionSuccess(:final corners): overlay.show(corners);
+///     case DetectionEmpty():                 overlay.hint('Point at a document');
+///     case DetectionSkipped():               /* normal under load — ignore */;
 ///     case DetectionError(:final error):     log.warn('detect failed', error);
 ///   }
 /// });
@@ -26,8 +30,8 @@ sealed class DetectionEvent {
 }
 
 /// A document rectangle was found in the frame.
-final class DocumentDetected extends DetectionEvent {
-  const DocumentDetected(this.corners);
+final class DetectionSuccess extends DetectionEvent {
+  const DetectionSuccess(this.corners);
 
   /// The document's four corners (normalized 0..1). When corner stabilization
   /// is enabled these are the smoothed corners; otherwise the raw per-frame
@@ -37,15 +41,15 @@ final class DocumentDetected extends DetectionEvent {
 
 /// The frame was processed but held no document-like rectangle. This is the
 /// normal "nothing in view yet" signal — not an error.
-final class NoDocument extends DetectionEvent {
-  const NoDocument();
+final class DetectionEmpty extends DetectionEvent {
+  const DetectionEmpty();
 }
 
 /// The frame was skipped because a previous frame was still being processed.
 /// The stream drops frames under backpressure so it never backs up; this event
 /// makes that visible rather than looking like an empty scene.
-final class FrameDropped extends DetectionEvent {
-  const FrameDropped();
+final class DetectionSkipped extends DetectionEvent {
+  const DetectionSkipped();
 }
 
 /// Native detection threw for this frame. The stream stays alive (one bad frame

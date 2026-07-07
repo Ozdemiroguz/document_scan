@@ -11,7 +11,7 @@ import 'package:flutter/material.dart';
 /// converts each [CameraImage] into a [ScanInput.cameraFrame], and feeds those
 /// frames through [DocumentDetector.detectStream] (with a [CornerStabilizer] to
 /// smooth the overlay). Each frame yields a [DetectionEvent] we switch on:
-/// [DocumentDetected] draws the quad, [NoDocument] shows a hint, [FrameDropped]
+/// [DetectionSuccess] draws the quad, [DetectionEmpty] shows a hint, [DetectionSkipped]
 /// is ignored (normal backpressure), [DetectionError] shows a small error.
 ///
 /// Alongside, each frame's corners are fed to an [AutoCaptureAnalyzer] whose
@@ -181,21 +181,21 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
   void _onEvent(DetectionEvent event) {
     if (!mounted) return;
     switch (event) {
-      case DocumentDetected(:final corners):
+      case DetectionSuccess(:final corners):
         _updateCapture(corners);
         setState(() {
           _corners = corners;
           _error = null;
           _hint = 'Document detected — hold steady.';
         });
-      case NoDocument():
+      case DetectionEmpty():
         _updateCapture(null);
         setState(() {
           _corners = null;
           _error = null;
           _hint = 'Point the camera at a document.';
         });
-      case FrameDropped():
+      case DetectionSkipped():
         break; // normal backpressure under load — ignore
       case DetectionError(:final error):
         setState(() => _error = 'Detection error: $error');

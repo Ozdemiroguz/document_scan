@@ -118,32 +118,32 @@ void main() {
   });
 
   group('addEvent() / bindEvents() — DetectionEvent bridge', () {
-    test('DocumentDetected advances toward ready just like add(corners)', () {
+    test('DetectionSuccess advances toward ready just like add(corners)', () {
       final a = AutoCaptureAnalyzer(requiredSteadyFrames: 2);
-      a.addEvent(DocumentDetected(goodDoc()));
-      final s = a.addEvent(DocumentDetected(goodDoc()));
+      a.addEvent(DetectionSuccess(goodDoc()));
+      final s = a.addEvent(DetectionSuccess(goodDoc()));
       expect(s.shouldCapture, isTrue);
     });
 
-    test('FrameDropped holds state instead of resetting the countdown', () {
+    test('DetectionSkipped holds state instead of resetting the countdown', () {
       final a = AutoCaptureAnalyzer(requiredSteadyFrames: 3);
-      a.addEvent(DocumentDetected(goodDoc()));
-      final held = a.addEvent(const FrameDropped());
+      a.addEvent(DetectionSuccess(goodDoc()));
+      final held = a.addEvent(const DetectionSkipped());
       // A dropped frame must NOT wipe the accumulated steadiness.
       expect(held.steadyFrames, 1);
       // ...and the next good frame keeps counting up rather than restarting.
-      final next = a.addEvent(DocumentDetected(goodDoc()));
+      final next = a.addEvent(DetectionSuccess(goodDoc()));
       expect(next.steadyFrames, 2);
     });
 
-    test('NoDocument and DetectionError reset like a null frame', () {
+    test('DetectionEmpty and DetectionError reset like a null frame', () {
       final a = AutoCaptureAnalyzer(requiredSteadyFrames: 3);
-      a.addEvent(DocumentDetected(goodDoc()));
-      final gone = a.addEvent(const NoDocument());
+      a.addEvent(DetectionSuccess(goodDoc()));
+      final gone = a.addEvent(const DetectionEmpty());
       expect(gone.steadyFrames, 0);
       expect(gone.status, AutoCaptureStatus.searching);
 
-      a.addEvent(DocumentDetected(goodDoc()));
+      a.addEvent(DetectionSuccess(goodDoc()));
       final errored = a.addEvent(DetectionError(Exception('x')));
       expect(errored.steadyFrames, 0);
     });
@@ -151,10 +151,10 @@ void main() {
     test('bindEvents pipes a detectStream-shaped stream to ready', () async {
       final a = AutoCaptureAnalyzer(requiredSteadyFrames: 2);
       final events = Stream<DetectionEvent>.fromIterable([
-        const NoDocument(),
-        const FrameDropped(),
-        DocumentDetected(goodDoc()),
-        DocumentDetected(goodDoc()),
+        const DetectionEmpty(),
+        const DetectionSkipped(),
+        DetectionSuccess(goodDoc()),
+        DetectionSuccess(goodDoc()),
       ]);
       final states = await a.bindEvents(events).toList();
       expect(states.last.shouldCapture, isTrue);

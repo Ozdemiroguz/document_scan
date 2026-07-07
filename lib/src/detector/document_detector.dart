@@ -15,7 +15,7 @@ import 'detection_event.dart';
 /// too. It never opens a camera; you feed it images or frames.
 ///
 /// Degrades gracefully: if the platform can't detect (or isn't implemented),
-/// [detect] returns `null` and [detectStream] emits a [NoDocument] (or a
+/// [detect] returns `null` and [detectStream] emits a [DetectionEmpty] (or a
 /// [DetectionError] carrying the failure) for that frame, rather than throwing.
 class DocumentDetector {
   /// Creates a detector. [channel] is injectable for tests.
@@ -40,14 +40,14 @@ class DocumentDetector {
 
   /// Runs detection over a stream of camera frames, emitting a [DetectionEvent]
   /// per handled frame so the consumer can tell *why* a frame produced no
-  /// corners: [DocumentDetected], [NoDocument], [FrameDropped] (skipped under
+  /// corners: [DetectionSuccess], [DetectionEmpty], [DetectionSkipped] (skipped under
   /// backpressure), or [DetectionError] (native threw — the stream stays alive).
   ///
   /// Frames that arrive while a previous one is still being processed are
-  /// dropped (emitting [FrameDropped]) so the stream never backs up.
+  /// dropped (emitting [DetectionSkipped]) so the stream never backs up.
   ///
   /// Pass a [stabilize] filter to smooth jittery corners for an overlay — each
-  /// [DocumentDetected] then carries the EMA-smoothed corners. Omit it for the
+  /// [DetectionSuccess] then carries the EMA-smoothed corners. Omit it for the
   /// raw per-frame corners.
   ///
   /// The package does not own the camera — pass frames from your own capture
@@ -79,7 +79,7 @@ class DocumentDetector {
         sub = frames.listen(
           (frame) async {
             if (busy) {
-              emit(const FrameDropped());
+              emit(const DetectionSkipped());
               return; // drop frame — keep the pipeline responsive
             }
             busy = true;
@@ -90,8 +90,8 @@ class DocumentDetector {
                   : stabilize.add(corners);
               emit(
                 smoothed == null
-                    ? const NoDocument()
-                    : DocumentDetected(smoothed),
+                    ? const DetectionEmpty()
+                    : DetectionSuccess(smoothed),
               );
             } catch (e, st) {
               // Reset the smoother so a post-error document doesn't slide in

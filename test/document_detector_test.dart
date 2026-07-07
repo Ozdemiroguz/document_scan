@@ -202,10 +202,10 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       // Only the first frame reached native; the second was dropped by the
-      // busy guard and surfaced as a distinct FrameDropped event (not silence).
+      // busy guard and surfaced as a distinct DetectionSkipped event (not silence).
       expect(nativeCalls, 1);
-      expect(events.whereType<FrameDropped>(), hasLength(1));
-      expect(events.whereType<DocumentDetected>(), hasLength(1));
+      expect(events.whereType<DetectionSkipped>(), hasLength(1));
+      expect(events.whereType<DetectionSuccess>(), hasLength(1));
 
       await sub.cancel();
       await frames.close();
@@ -237,7 +237,7 @@ void main() {
       await frames.close();
     });
 
-    test('emits NoDocument when a frame holds no rectangle', () async {
+    test('emits DetectionEmpty when a frame holds no rectangle', () async {
       responder = (_) => null; // native found nothing
       final frames = StreamController<ScanInput>();
       final events = <DetectionEvent>[];
@@ -247,7 +247,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
 
       expect(events, hasLength(1));
-      expect(events.single, isA<NoDocument>());
+      expect(events.single, isA<DetectionEmpty>());
 
       await sub.cancel();
       await frames.close();
@@ -304,7 +304,7 @@ void main() {
       expect(errors, isEmpty);
       // The in-flight frame still produced its event before the clean close.
       expect(events, hasLength(1));
-      expect(events.single, isA<DocumentDetected>());
+      expect(events.single, isA<DetectionSuccess>());
     });
   });
 }

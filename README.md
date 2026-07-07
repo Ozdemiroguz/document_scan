@@ -93,11 +93,11 @@ final subscription = detector
     .detectStream(myCameraFrames) // Stream<ScanInput>
     .listen((event) {
       switch (event) {
-        case DocumentDetected(:final corners):
+        case DetectionSuccess(:final corners):
           setState(() => _corners = corners); // draw in your overlay
-        case NoDocument():
+        case DetectionEmpty():
           setState(() => _corners = null);    // hint: "point at a document"
-        case FrameDropped():
+        case DetectionSkipped():
           break; // normal backpressure under load — ignore
         case DetectionError(:final error):
           debugPrint('detect failed: $error'); // stream stays alive
@@ -114,7 +114,7 @@ slides) when the document jumps:
 
 ```dart
 detector.detectStream(myCameraFrames, stabilize: CornerStabilizer());
-// DocumentDetected.corners are now smoothed. Tune CornerStabilizer(smoothing:,
+// DetectionSuccess.corners are now smoothed. Tune CornerStabilizer(smoothing:,
 // resetDistance:) for steadier-but-laggier vs snappier.
 ```
 
@@ -127,7 +127,7 @@ confident long enough — you take the still and crop it:
 final analyzer = AutoCaptureAnalyzer();
 
 // Pipe the detector's event stream straight in — bindEvents keeps the
-// FrameDropped / DetectionError distinction (a dropped frame holds the
+// DetectionSkipped / DetectionError distinction (a dropped frame holds the
 // countdown; a lost document resets it):
 analyzer.bindEvents(detector.detectStream(frames)).listen((state) {
   if (state.status == AutoCaptureStatus.ready) capture();
@@ -142,19 +142,30 @@ the stream never backs up.
 
 ### Building a camera frame
 
+Use the format-specific factory so the required planes are actually required —
+`yuvFrame` on Android, `bgraFrame` on iOS:
+
 ```dart
-final input = ScanInput.cameraFrame(
+// Android (YUV420): the three planes are required.
+final input = ScanInput.yuvFrame(
   width: image.width,
   height: image.height,
-  format: ScanImageFormat.yuv420, // or .bgra8888 on iOS
   rotation: 90,
-  // YUV420 (Android): pass the three planes + strides
   yBytes: image.planes[0].bytes,
   uBytes: image.planes[1].bytes,
   vBytes: image.planes[2].bytes,
   yRowStride: image.planes[0].bytesPerRow,
   uvRowStride: image.planes[1].bytesPerRow,
   uvPixelStride: image.planes[1].bytesPerPixel ?? 1,
+);
+
+// iOS (BGRA): the single interleaved plane is required.
+final input = ScanInput.bgraFrame(
+  width: image.width,
+  height: image.height,
+  rotation: 0,
+  bytes: image.planes[0].bytes,
+  bytesPerRow: image.planes[0].bytesPerRow,
 );
 ```
 
