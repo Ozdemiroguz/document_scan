@@ -149,10 +149,11 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
 
     if (_frameFormat == ScanImageFormat.bgra8888) {
       final plane = image.planes.first;
-      return ScanInput.cameraFrame(
+      // Format-specific factory: the BGRA plane is a required argument, so a
+      // wrong-format call can't compile.
+      return ScanInput.bgraFrame(
         width: image.width,
         height: image.height,
-        format: ScanImageFormat.bgra8888,
         rotation: rotation,
         bytes: plane.bytes,
         bytesPerRow: plane.bytesPerRow,
@@ -164,10 +165,9 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
     final yPlane = image.planes[0];
     final uPlane = image.planes[1];
     final vPlane = image.planes[2];
-    return ScanInput.cameraFrame(
+    return ScanInput.yuvFrame(
       width: image.width,
       height: image.height,
-      format: ScanImageFormat.yuv420,
       rotation: rotation,
       yBytes: yPlane.bytes,
       uBytes: uPlane.bytes,

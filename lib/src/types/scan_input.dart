@@ -24,10 +24,45 @@ sealed class ScanInput {
   factory ScanInput.bytes(Uint8List bytes, {required int width, required int height}) =
       BytesScanInput;
 
-  /// A raw camera frame. For [ScanImageFormat.bgra8888] pass [bytes] (+
-  /// [bytesPerRow]); for [ScanImageFormat.yuv420] pass [yBytes]/[uBytes]/[vBytes]
-  /// with their strides. [rotation] is the clockwise degrees (0/90/180/270)
-  /// needed to bring the frame upright.
+  /// A raw BGRA camera frame (the iOS camera default). [bytes] is the single
+  /// interleaved BGRA plane; [bytesPerRow] is its row stride (0 assumes
+  /// `width * 4`). [rotation] is the clockwise degrees (0/90/180/270) to bring
+  /// the frame upright.
+  ///
+  /// Prefer this over [ScanInput.cameraFrame] for BGRA — it makes the required
+  /// plane a required argument, so a wrong-format call can't compile.
+  factory ScanInput.bgraFrame({
+    required int width,
+    required int height,
+    required Uint8List bytes,
+    int rotation,
+    int bytesPerRow,
+  }) = CameraFrameScanInput.bgra;
+
+  /// A raw YUV 4:2:0 camera frame (the Android camera default). Pass the three
+  /// planes ([yBytes]/[uBytes]/[vBytes]) and their strides. [rotation] is the
+  /// clockwise degrees (0/90/180/270) to bring the frame upright.
+  ///
+  /// Prefer this over [ScanInput.cameraFrame] for YUV — it makes the three
+  /// planes required, so a missing plane can't slip through.
+  factory ScanInput.yuvFrame({
+    required int width,
+    required int height,
+    required Uint8List yBytes,
+    required Uint8List uBytes,
+    required Uint8List vBytes,
+    int rotation,
+    int yRowStride,
+    int uvRowStride,
+    int uvPixelStride,
+  }) = CameraFrameScanInput.yuv;
+
+  /// A raw camera frame — the low-level, format-agnostic constructor. Most
+  /// callers should use [ScanInput.bgraFrame] or [ScanInput.yuvFrame], which
+  /// require exactly the planes their format needs. Here the plane/stride params
+  /// are all optional and it's on you to pass the right set for [format]:
+  /// [bytes] (+[bytesPerRow]) for [ScanImageFormat.bgra8888], or
+  /// [yBytes]/[uBytes]/[vBytes] with strides for [ScanImageFormat.yuv420].
   factory ScanInput.cameraFrame({
     required int width,
     required int height,
@@ -74,6 +109,36 @@ final class CameraFrameScanInput extends ScanInput {
     this.uvRowStride = 0,
     this.uvPixelStride = 1,
   });
+
+  /// A BGRA frame: the single interleaved plane is required.
+  const CameraFrameScanInput.bgra({
+    required this.width,
+    required this.height,
+    required Uint8List this.bytes,
+    this.rotation = 0,
+    this.bytesPerRow = 0,
+  })  : format = ScanImageFormat.bgra8888,
+        yBytes = null,
+        uBytes = null,
+        vBytes = null,
+        yRowStride = 0,
+        uvRowStride = 0,
+        uvPixelStride = 1;
+
+  /// A YUV 4:2:0 frame: the three planes are required.
+  const CameraFrameScanInput.yuv({
+    required this.width,
+    required this.height,
+    required Uint8List this.yBytes,
+    required Uint8List this.uBytes,
+    required Uint8List this.vBytes,
+    this.rotation = 0,
+    this.yRowStride = 0,
+    this.uvRowStride = 0,
+    this.uvPixelStride = 1,
+  })  : format = ScanImageFormat.yuv420,
+        bytes = null,
+        bytesPerRow = 0;
 
   /// Frame width in pixels.
   final int width;
