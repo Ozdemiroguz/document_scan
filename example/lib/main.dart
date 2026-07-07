@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'screens/gallery_scan_screen.dart';
 import 'screens/manual_edit_screen.dart';
+import 'screens/multi_page_screen.dart';
 import 'screens/realtime_scan_screen.dart';
 import 'screens/reprocess_screen.dart';
 
@@ -17,6 +18,8 @@ void main() => runApp(const DocumentScanExampleApp());
 ///   user's corners.
 /// * **Reprocess with filter** — detect+crop once, then re-filter the same scan
 ///   cheaply through [DocumentProcessor].
+/// * **Multi-page session** — collect scans in a [ScanSession], reorder/remove,
+///   then export one PDF via [DocumentProcessor.pagesToPdf].
 class DocumentScanExampleApp extends StatelessWidget {
   const DocumentScanExampleApp({super.key});
 
@@ -67,6 +70,14 @@ class HomeScreen extends StatelessWidget {
             're-runs, not detection.',
         icon: Icons.tune,
         builder: ReprocessScreen.new,
+      ),
+      const _Demo(
+        title: 'Multi-page session',
+        subtitle:
+            'Collect scans in a ScanSession, reorder/remove, then export one '
+            'multi-page PDF with pagesToPdf.',
+        icon: Icons.picture_as_pdf_outlined,
+        builder: MultiPageScreen.new,
       ),
     ];
 

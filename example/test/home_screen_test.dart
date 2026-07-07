@@ -10,7 +10,8 @@ void main() {
     expect(find.text('Realtime overlay'), findsOneWidget);
     expect(find.text('Manual corner edit'), findsOneWidget);
     expect(find.text('Reprocess with filter'), findsOneWidget);
+    expect(find.text('Multi-page session'), findsOneWidget);
     // Each demo row is a tappable ListTile.
-    expect(find.byType(ListTile), findsNWidgets(4));
+    expect(find.byType(ListTile), findsNWidgets(5));
   });
 }
