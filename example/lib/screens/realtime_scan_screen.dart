@@ -259,11 +259,11 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Realtime overlay')),
-      body: _buildBody(),
+      body: _buildBody(context),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(BuildContext context) {
     final controller = _controller;
     if (!_ready || controller == null || !controller.value.isInitialized) {
       return Center(
@@ -280,6 +280,11 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
         ),
       );
     }
+
+    // The overlays sit over a full-bleed camera preview, so we can't use
+    // SafeArea (it would inset the preview too). Instead push the bottom banners
+    // above the home indicator / nav bar using the device's bottom inset.
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
     return Stack(
       fit: StackFit.expand,
@@ -302,7 +307,7 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
           child: _CaptureChip(status: _capture),
         ),
         Positioned(
-          bottom: 24,
+          bottom: 24 + bottomInset,
           left: 16,
           right: 16,
           child: Column(
