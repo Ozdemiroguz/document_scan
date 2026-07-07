@@ -334,7 +334,7 @@ void main() {
       final jpeg = await processor.crop(
         ScanInput.bytes(src, width: 80, height: 80),
         fullFrame,
-        output: const ScanOutputFormat.jpeg(quality: 70),
+        output: ScanOutputFormat.jpegAt(70),
       );
       // JPEG magic: 0xFF 0xD8 … 0xFF 0xD9.
       expect(jpeg!.bytes.sublist(0, 2), [0xFF, 0xD8]);
@@ -365,12 +365,12 @@ void main() {
       final hi = await processor.crop(
         ScanInput.bytes(noisyPng, width: 120, height: 120),
         fullFrame,
-        output: const ScanOutputFormat.jpeg(quality: 90),
+        output: ScanOutputFormat.jpegAt(90),
       );
       final lo = await processor.crop(
         ScanInput.bytes(noisyPng, width: 120, height: 120),
         fullFrame,
-        output: const ScanOutputFormat.jpeg(quality: 30),
+        output: ScanOutputFormat.jpegAt(30),
       );
       expect(lo!.bytes.length, lessThan(hi!.bytes.length));
     });

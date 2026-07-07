@@ -101,7 +101,7 @@ void main() {
     final out = await scanner().scan(
       ScanInput.bytes(_png(80, 80), width: 80, height: 80),
       corners: _fullFrame,
-      output: const ScanOutputFormat.jpeg(quality: 80),
+      output: ScanOutputFormat.jpegAt(80),
     );
     // JPEG magic bytes.
     expect(out!.bytes.sublist(0, 2), [0xFF, 0xD8]);

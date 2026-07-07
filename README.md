@@ -46,7 +46,7 @@ Pick a filter or a different output encoding:
 final pdf = await scanner.scan(
   ScanInput.file(path),
   filter: ScanFilter.enhance,       // clean "scanned" look (the default)
-  output: ScanOutputFormat.pdf,     // or .jpeg(quality: 92); default is PNG
+  output: ScanOutputFormat.pdf,     // or .jpeg / .jpegAt(92); default is PNG
 );
 // pdf!.bytes is now a single-page A4 PDF.
 ```
@@ -190,7 +190,8 @@ different container:
 | `ScanOutputFormat`       | `bytes` are…                          |
 | ------------------------ | ------------------------------------- |
 | `ScanOutputFormat.png`   | PNG (the default).                    |
-| `ScanOutputFormat.jpeg(quality: 92)` | JPEG at the given quality. |
+| `ScanOutputFormat.jpeg`   | JPEG at the default quality (90).     |
+| `ScanOutputFormat.jpegAt(92)` | JPEG at a specific quality.       |
 | `ScanOutputFormat.pdf`   | A single-page A4 PDF of the scan.     |
 
 ## What you get back
