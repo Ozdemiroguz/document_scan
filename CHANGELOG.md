@@ -26,6 +26,10 @@ Initial release.
 - `DocumentProcessor.crop` caps the warp output's long side at `maxDimension`
   (default 2000px, aspect-preserving; pass `null` to warp at full resolution) so
   a near-full-frame high-megapixel photo doesn't produce a needlessly huge scan.
+- Off-UI-thread crop: `crop`/`applyFilter` take a `background` flag (default
+  `false`) that runs the pure-Dart warp+filter on a background isolate; the
+  `DocumentScanner.scan` façade defaults it to `true`, so the simple path never
+  janks the UI without the caller reaching for `Isolate.run`.
 - `ScanSession` — an immutable multi-page container (add / reorder / remove).
 - Plugin-free value types with value equality: `ScanInput` (with format-specific
   `bgraFrame` / `yuvFrame` frame factories), `DocumentCorners` (geometry-ordered

@@ -4,14 +4,14 @@ import 'package:document_scan/document_scan.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../scan_isolate.dart';
-
-/// Demonstrates the detect-then-crop flow with the heavy step off the UI thread.
+/// Demonstrates the one-call façade: [DocumentScanner.scan].
 ///
-/// Pick a photo, run [DocumentDetector.detect] (native, off-thread already),
-/// then perspective-correct + filter it via [DocumentProcessor.crop] on a
-/// background isolate (see [cropInIsolate]) so the UI stays responsive while the
-/// warp runs. The filter dropdown re-crops the same detected corners live.
+/// Pick a photo, hand its path to `scanner.scan(...)`, and the package detects
+/// the document, perspective-corrects it, applies the chosen [ScanFilter], and
+/// returns encoded bytes — all in one call. The heavy warp runs on a background
+/// isolate automatically (scan defaults `background: true`), so the UI stays
+/// responsive without you touching `Isolate.run`. The filter dropdown re-scans
+/// live to compare the looks.
 class GalleryScanScreen extends StatefulWidget {
   const GalleryScanScreen({super.key});
 
@@ -20,9 +20,7 @@ class GalleryScanScreen extends StatefulWidget {
 }
 
 class _GalleryScanScreenState extends State<GalleryScanScreen> {
-  // The two composable pieces used directly: the detector finds the corners
-  // (native), then cropInIsolate warps + filters off the UI thread.
-  final _detector = DocumentDetector();
+  final _scanner = DocumentScanner();
 
   // Which enhancement to apply after cropping. `enhance` is the default clean
   // "scanned document" look; the dropdown lets you compare the others live.
@@ -43,17 +41,17 @@ class _GalleryScanScreenState extends State<GalleryScanScreen> {
     if (picked == null) return;
     setState(() {
       _busy = true;
-      _status = 'Detecting document edges…';
+      _status = 'Scanning…';
       _scannedBytes = null;
     });
 
-    // Detect on the main isolate (native, non-blocking), then warp + filter on
-    // a background isolate so the UI doesn't freeze. Returns null when no
+    // One call: detect + warp + filter. The warp runs off the UI thread
+    // automatically (scan defaults background: true). Returns null when no
     // document-like rectangle is found.
-    final corners = await _detector.detect(ScanInput.file(picked.path));
-    final scan = corners == null
-        ? null
-        : await cropInIsolate(picked.path, corners, filter: _filter);
+    final scan = await _scanner.scan(
+      ScanInput.file(picked.path),
+      filter: _filter,
+    );
 
     if (!mounted) return;
     setState(() {

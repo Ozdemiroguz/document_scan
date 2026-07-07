@@ -4,15 +4,14 @@ import 'package:document_scan/document_scan.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../scan_isolate.dart';
-
 /// Demonstrates re-filtering the SAME scan cheaply.
 ///
 /// Corner detection is the expensive part (a native round-trip). Here we run
 /// [DocumentDetector.detect] ONCE per picked image to get the corners, then feed
 /// those cached corners to [DocumentProcessor.crop] on every filter change — so
 /// swapping filters only re-warps + re-filters, never re-detects. This is the
-/// composed-pieces counterpart to the one-call [DocumentScanner].
+/// composed-pieces counterpart to the one-call [DocumentScanner]; each crop
+/// passes `background: true` to keep the warp off the UI thread.
 class ReprocessScreen extends StatefulWidget {
   const ReprocessScreen({super.key});
 
@@ -21,9 +20,10 @@ class ReprocessScreen extends StatefulWidget {
 }
 
 class _ReprocessScreenState extends State<ReprocessScreen> {
-  // Detect once (native), then re-crop with cropInIsolate on each filter change
-  // — the "detect once, crop many" split, with the crop off the UI thread.
+  // Detect once (native), then re-crop on each filter change — the "detect once,
+  // crop many" split. crop(background: true) keeps the warp off the UI thread.
   final _detector = DocumentDetector();
+  static const _processor = DocumentProcessor();
 
   String? _imagePath;
   // Cached across filter changes — computed once, never re-detected.
@@ -78,9 +78,14 @@ class _ReprocessScreenState extends State<ReprocessScreen> {
       _status = 'Applying ${_filter.name} (no re-detection)…';
     });
 
-    // Same cached corners, new filter — warp + filter on a background isolate
-    // so swapping filters never freezes the UI. No detection here.
-    final scan = await cropInIsolate(path, corners, filter: _filter);
+    // Same cached corners, new filter — background: true runs the warp + filter
+    // on an isolate so swapping filters never freezes the UI. No detection here.
+    final scan = await _processor.crop(
+      ScanInput.file(path),
+      corners,
+      filter: _filter,
+      background: true,
+    );
 
     if (!mounted) return;
     setState(() {

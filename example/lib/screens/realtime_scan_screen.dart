@@ -8,8 +8,9 @@ import 'package:flutter/material.dart';
 /// Demonstrates realtime detection over a live camera stream.
 ///
 /// The package never owns the camera — this screen drives the `camera` plugin,
-/// converts each [CameraImage] into a [ScanInput.cameraFrame], and feeds those
-/// frames through [DocumentDetector.detectStream] (with a [CornerStabilizer] to
+/// converts each [CameraImage] into a [ScanInput.bgraFrame] (iOS) or
+/// [ScanInput.yuvFrame] (Android), and feeds those frames through
+/// [DocumentDetector.detectStream] (with a [CornerStabilizer] to
 /// smooth the overlay). Each frame yields a [DetectionEvent] we switch on:
 /// [DetectionSuccess] draws the quad, [DetectionEmpty] shows a hint, [DetectionSkipped]
 /// is ignored (normal backpressure), [DetectionError] shows a small error.
@@ -151,7 +152,7 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
     });
   }
 
-  // Converts a CameraImage to the package's ScanInput.cameraFrame. The plane →
+  // Converts a CameraImage to a ScanInput.bgraFrame / yuvFrame. The plane →
   // ScanInput mapping mirrors the reference realtime pipeline: a single BGRA
   // plane on iOS, three YUV420 planes (+ strides) on Android.
   ScanInput? _toScanInput(CameraImage image, int rotation) {
@@ -190,16 +191,29 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
 
   void _onEvent(DetectionEvent event) {
     if (!mounted) return;
+
+    // Feed the raw event to the analyzer so it preserves the DetectionSkipped /
+    // DetectionError distinction (a dropped frame holds the countdown; a lost
+    // document or error resets it) — instead of flattening to corners first.
+    final capture = _analyzer.addEvent(event);
+    _capture = capture.status;
+    if (capture.shouldCapture && !_flashCaptured) {
+      _flashCaptured = true;
+      // A real app would grab a full-res still + crop here. We just flash.
+      Future<void>.delayed(const Duration(milliseconds: 900), () {
+        if (mounted) setState(() => _flashCaptured = false);
+      });
+    }
+
+    // Drive the overlay + hint text off the same event.
     switch (event) {
       case DetectionSuccess(:final corners):
-        _updateCapture(corners);
         setState(() {
           _corners = corners;
           _error = null;
           _hint = 'Document detected — hold steady.';
         });
       case DetectionEmpty():
-        _updateCapture(null);
         setState(() {
           _corners = null;
           _error = null;
@@ -209,19 +223,6 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
         break; // normal backpressure under load — ignore
       case DetectionError(:final error):
         setState(() => _error = 'Detection error: $error');
-    }
-  }
-
-  // Feed corners to the auto-capture analyzer; flash "Captured!" once ready.
-  void _updateCapture(DocumentCorners? corners) {
-    final state = _analyzer.add(corners);
-    _capture = state.status;
-    if (state.shouldCapture && !_flashCaptured) {
-      _flashCaptured = true;
-      // A real app would grab a full-res still + crop here. We just flash.
-      Future<void>.delayed(const Duration(milliseconds: 900), () {
-        if (mounted) setState(() => _flashCaptured = false);
-      });
     }
   }
 

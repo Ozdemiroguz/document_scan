@@ -93,6 +93,11 @@ Pass them and detection is skipped:
 final scan = await scanner.scan(input, corners: editedCorners);
 ```
 
+> **Stays off the UI thread.** The warp is pure-Dart CPU work (≈1s on a
+> full-frame photo), so `scan` runs it on a background isolate by default — you
+> don't need `compute`/`Isolate.run`. Pass `background: false` if you're already
+> calling from your own background isolate.
+
 ### …or compose the pieces yourself
 
 `DocumentScanner` is a thin tie between two independent pieces you can use on
@@ -109,8 +114,15 @@ final input = ScanInput.file('/path/to/photo.jpg');
 final corners = await detector.detect(input);
 
 if (corners != null) {
-  // 2. Perspective-correct + filter into an upright scan.
-  final scan = await processor.crop(input, corners, filter: ScanFilter.enhance);
+  // 2. Perspective-correct + filter into an upright scan. Pass background: true
+  //    to run the warp on an isolate (the primitive defaults to foreground, so
+  //    it composes with your own threading; scan() opts in for you).
+  final scan = await processor.crop(
+    input,
+    corners,
+    filter: ScanFilter.enhance,
+    background: true,
+  );
   // scan!.bytes — save it, show it with Image.memory, …
 }
 ```

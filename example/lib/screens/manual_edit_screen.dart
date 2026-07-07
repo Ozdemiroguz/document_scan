@@ -6,7 +6,6 @@ import 'package:document_scan/document_scan.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../scan_isolate.dart';
 import '../widgets/draggable_corner_overlay.dart';
 
 /// Demonstrates the detect → adjust → crop-with-corners workflow.
@@ -15,7 +14,8 @@ import '../widgets/draggable_corner_overlay.dart';
 /// quad when nothing is found), lets the user drag the four corners to correct
 /// the detection, then passes those edited corners to [DocumentScanner.scan] via
 /// its `corners:` argument — which skips detection and crops exactly what the
-/// user set. This is the "the auto-detect was slightly off, let me fix it" path.
+/// user set (on a background isolate, per scan's default). This is the "the
+/// auto-detect was slightly off, let me fix it" path.
 class ManualEditScreen extends StatefulWidget {
   const ManualEditScreen({super.key});
 
@@ -25,6 +25,7 @@ class ManualEditScreen extends StatefulWidget {
 
 class _ManualEditScreenState extends State<ManualEditScreen> {
   final _detector = DocumentDetector();
+  final _scanner = DocumentScanner();
 
   String? _imagePath;
   // Intrinsic pixel size of the picked image, needed so the overlay's
@@ -117,9 +118,9 @@ class _ManualEditScreenState extends State<ManualEditScreen> {
       _croppedBytes = null;
     });
 
-    // The user's edited corners skip detection entirely — warp with exactly
-    // that quad, on a background isolate so the crop doesn't freeze the UI.
-    final scan = await cropInIsolate(path, corners);
+    // Passing corners: skips detection — scan warps with exactly the user's
+    // quad. background defaults true, so the crop stays off the UI thread.
+    final scan = await _scanner.scan(ScanInput.file(path), corners: corners);
 
     if (!mounted) return;
     setState(() {
