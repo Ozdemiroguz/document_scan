@@ -4,12 +4,14 @@ import 'package:document_scan/document_scan.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-/// Demonstrates the one-call façade: [DocumentScanner.scan].
+import '../scan_isolate.dart';
+
+/// Demonstrates the detect-then-crop flow with the heavy step off the UI thread.
 ///
-/// Pick a photo from the gallery, hand its path to `scanner.scan(...)`, and the
-/// package detects the document's corners, perspective-corrects it, applies the
-/// chosen [ScanFilter], and returns encoded bytes — all in one call. The filter
-/// dropdown lets you compare the looks live (each change re-scans).
+/// Pick a photo, run [DocumentDetector.detect] (native, off-thread already),
+/// then perspective-correct + filter it via [DocumentProcessor.crop] on a
+/// background isolate (see [cropInIsolate]) so the UI stays responsive while the
+/// warp runs. The filter dropdown re-crops the same detected corners live.
 class GalleryScanScreen extends StatefulWidget {
   const GalleryScanScreen({super.key});
 
@@ -18,11 +20,9 @@ class GalleryScanScreen extends StatefulWidget {
 }
 
 class _GalleryScanScreenState extends State<GalleryScanScreen> {
-  // The one-call façade: detect corners + perspective-correct + filter. Both
-  // underlying pieces (DocumentDetector, DocumentProcessor) are still usable on
-  // their own — see the "compose the pieces yourself" README section and the
-  // other demo screens.
-  final _scanner = DocumentScanner();
+  // The two composable pieces used directly: the detector finds the corners
+  // (native), then cropInIsolate warps + filters off the UI thread.
+  final _detector = DocumentDetector();
 
   // Which enhancement to apply after cropping. `enhance` is the default clean
   // "scanned document" look; the dropdown lets you compare the others live.
@@ -33,7 +33,13 @@ class _GalleryScanScreenState extends State<GalleryScanScreen> {
   bool _busy = false;
 
   Future<void> _pickAndScan() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      // A document scan is legible well below full-sensor resolution, and a
+      // 12MP+ pick is slow to load and warp. 2000px keeps it snappy.
+      maxWidth: 2000,
+      maxHeight: 2000,
+    );
     if (picked == null) return;
     setState(() {
       _busy = true;
@@ -41,13 +47,13 @@ class _GalleryScanScreenState extends State<GalleryScanScreen> {
       _scannedBytes = null;
     });
 
-    // One call: finds the document, warps it upright, applies the filter, and
-    // returns encoded bytes. Returns null when no document-like rectangle is
-    // found (e.g. a cluttered scene or a non-document photo).
-    final scan = await _scanner.scan(
-      ScanInput.file(picked.path),
-      filter: _filter,
-    );
+    // Detect on the main isolate (native, non-blocking), then warp + filter on
+    // a background isolate so the UI doesn't freeze. Returns null when no
+    // document-like rectangle is found.
+    final corners = await _detector.detect(ScanInput.file(picked.path));
+    final scan = corners == null
+        ? null
+        : await cropInIsolate(picked.path, corners, filter: _filter);
 
     if (!mounted) return;
     setState(() {
@@ -63,51 +69,53 @@ class _GalleryScanScreenState extends State<GalleryScanScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Gallery scan')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(_status, style: Theme.of(context).textTheme.bodyLarge),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Text('Filter: '),
-                DropdownButton<ScanFilter>(
-                  value: _filter,
-                  onChanged: _busy
-                      ? null
-                      : (f) {
-                          if (f == null) return;
-                          setState(() => _filter = f);
-                        },
-                  items: [
-                    for (final f in ScanFilter.values)
-                      DropdownMenuItem(value: f, child: Text(f.name)),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: Center(
-                child: _scannedBytes != null
-                    ? Image.memory(_scannedBytes!)
-                    : const Icon(Icons.document_scanner_outlined, size: 96),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(_status, style: Theme.of(context).textTheme.bodyLarge),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Text('Filter: '),
+                  DropdownButton<ScanFilter>(
+                    value: _filter,
+                    onChanged: _busy
+                        ? null
+                        : (f) {
+                            if (f == null) return;
+                            setState(() => _filter = f);
+                          },
+                    items: [
+                      for (final f in ScanFilter.values)
+                        DropdownMenuItem(value: f, child: Text(f.name)),
+                    ],
+                  ),
+                ],
               ),
-            ),
-            FilledButton.icon(
-              onPressed: _busy ? null : _pickAndScan,
-              icon: _busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.photo_library_outlined),
-              label: Text(_busy ? 'Scanning…' : 'Pick & scan a document'),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Expanded(
+                child: Center(
+                  child: _scannedBytes != null
+                      ? Image.memory(_scannedBytes!)
+                      : const Icon(Icons.document_scanner_outlined, size: 96),
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: _busy ? null : _pickAndScan,
+                icon: _busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.photo_library_outlined),
+                label: Text(_busy ? 'Scanning…' : 'Pick & scan a document'),
+              ),
+            ],
+          ),
         ),
       ),
     );

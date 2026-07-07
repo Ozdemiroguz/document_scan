@@ -6,6 +6,7 @@ import 'package:document_scan/document_scan.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../scan_isolate.dart';
 import '../widgets/draggable_corner_overlay.dart';
 
 /// Demonstrates the detect → adjust → crop-with-corners workflow.
@@ -24,7 +25,6 @@ class ManualEditScreen extends StatefulWidget {
 
 class _ManualEditScreenState extends State<ManualEditScreen> {
   final _detector = DocumentDetector();
-  final _scanner = DocumentScanner();
 
   String? _imagePath;
   // Intrinsic pixel size of the picked image, needed so the overlay's
@@ -46,7 +46,13 @@ class _ManualEditScreenState extends State<ManualEditScreen> {
   );
 
   Future<void> _pick() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      // A document scan is legible well below full-sensor resolution, and a
+      // 12MP+ pick is slow to load and warp. 2000px keeps it snappy.
+      maxWidth: 2000,
+      maxHeight: 2000,
+    );
     if (picked == null) return;
     setState(() {
       _busy = true;
@@ -111,9 +117,9 @@ class _ManualEditScreenState extends State<ManualEditScreen> {
       _croppedBytes = null;
     });
 
-    // corners: skips detection entirely — the image is warped with exactly the
-    // quad the user set.
-    final scan = await _scanner.scan(ScanInput.file(path), corners: corners);
+    // The user's edited corners skip detection entirely — warp with exactly
+    // that quad, on a background isolate so the crop doesn't freeze the UI.
+    final scan = await cropInIsolate(path, corners);
 
     if (!mounted) return;
     setState(() {
@@ -129,35 +135,37 @@ class _ManualEditScreenState extends State<ManualEditScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Manual corner edit')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(_status, style: Theme.of(context).textTheme.bodyLarge),
-            const SizedBox(height: 12),
-            Expanded(child: Center(child: _buildStage())),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _busy ? null : _pick,
-                    icon: const Icon(Icons.photo_library_outlined),
-                    label: const Text('Pick image'),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(_status, style: Theme.of(context).textTheme.bodyLarge),
+              const SizedBox(height: 12),
+              Expanded(child: Center(child: _buildStage())),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : _pick,
+                      icon: const Icon(Icons.photo_library_outlined),
+                      label: const Text('Pick image'),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: (_busy || _corners == null) ? null : _crop,
-                    icon: const Icon(Icons.crop),
-                    label: const Text('Crop'),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: (_busy || _corners == null) ? null : _crop,
+                      icon: const Icon(Icons.crop),
+                      label: const Text('Crop'),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

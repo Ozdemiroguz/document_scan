@@ -4,6 +4,8 @@ import 'package:document_scan/document_scan.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../scan_isolate.dart';
+
 /// Demonstrates re-filtering the SAME scan cheaply.
 ///
 /// Corner detection is the expensive part (a native round-trip). Here we run
@@ -19,10 +21,9 @@ class ReprocessScreen extends StatefulWidget {
 }
 
 class _ReprocessScreenState extends State<ReprocessScreen> {
-  // The two independent pieces, used directly (no DocumentScanner façade) to
-  // make the "detect once, crop many" split explicit.
+  // Detect once (native), then re-crop with cropInIsolate on each filter change
+  // — the "detect once, crop many" split, with the crop off the UI thread.
   final _detector = DocumentDetector();
-  static const _processor = DocumentProcessor();
 
   String? _imagePath;
   // Cached across filter changes — computed once, never re-detected.
@@ -34,7 +35,13 @@ class _ReprocessScreenState extends State<ReprocessScreen> {
   String _status = 'Pick a photo — detection runs once, then swap filters.';
 
   Future<void> _pick() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      // A document scan is legible well below full-sensor resolution, and a
+      // 12MP+ pick is slow to load and warp. 2000px keeps it snappy.
+      maxWidth: 2000,
+      maxHeight: 2000,
+    );
     if (picked == null) return;
     setState(() {
       _busy = true;
@@ -71,11 +78,9 @@ class _ReprocessScreenState extends State<ReprocessScreen> {
       _status = 'Applying ${_filter.name} (no re-detection)…';
     });
 
-    final scan = await _processor.crop(
-      ScanInput.file(path),
-      corners,
-      filter: _filter,
-    );
+    // Same cached corners, new filter — warp + filter on a background isolate
+    // so swapping filters never freezes the UI. No detection here.
+    final scan = await cropInIsolate(path, corners, filter: _filter);
 
     if (!mounted) return;
     setState(() {
@@ -98,47 +103,49 @@ class _ReprocessScreenState extends State<ReprocessScreen> {
     final hasScan = _corners != null;
     return Scaffold(
       appBar: AppBar(title: const Text('Reprocess with filter')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(_status, style: Theme.of(context).textTheme.bodyLarge),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Text('Filter: '),
-                DropdownButton<ScanFilter>(
-                  value: _filter,
-                  // Disabled until we have cached corners to reprocess.
-                  onChanged: (_busy || !hasScan) ? null : _onFilterChanged,
-                  items: [
-                    for (final f in ScanFilter.values)
-                      DropdownMenuItem(value: f, child: Text(f.name)),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: Center(
-                child: _resultBytes != null
-                    ? Image.memory(_resultBytes!)
-                    : const Icon(Icons.tune, size: 96),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(_status, style: Theme.of(context).textTheme.bodyLarge),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Text('Filter: '),
+                  DropdownButton<ScanFilter>(
+                    value: _filter,
+                    // Disabled until we have cached corners to reprocess.
+                    onChanged: (_busy || !hasScan) ? null : _onFilterChanged,
+                    items: [
+                      for (final f in ScanFilter.values)
+                        DropdownMenuItem(value: f, child: Text(f.name)),
+                    ],
+                  ),
+                ],
               ),
-            ),
-            FilledButton.icon(
-              onPressed: _busy ? null : _pick,
-              icon: _busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.photo_library_outlined),
-              label: Text(_busy ? 'Working…' : 'Pick & detect a document'),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Expanded(
+                child: Center(
+                  child: _resultBytes != null
+                      ? Image.memory(_resultBytes!)
+                      : const Icon(Icons.tune, size: 96),
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: _busy ? null : _pick,
+                icon: _busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.photo_library_outlined),
+                label: Text(_busy ? 'Working…' : 'Pick & detect a document'),
+              ),
+            ],
+          ),
         ),
       ),
     );

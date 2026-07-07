@@ -47,8 +47,9 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
 
   // iOS streams accept BGRA only; Android accepts YUV420 (see the README's
   // "Realtime frame format" note). We match the plugin's default per platform.
-  late final ScanImageFormat _frameFormat =
-      Platform.isIOS ? ScanImageFormat.bgra8888 : ScanImageFormat.yuv420;
+  late final ScanImageFormat _frameFormat = Platform.isIOS
+      ? ScanImageFormat.bgra8888
+      : ScanImageFormat.yuv420;
 
   DocumentCorners? _corners; // smoothed corners for the overlay
   AutoCaptureStatus _capture = AutoCaptureStatus.searching;
@@ -362,7 +363,10 @@ class _DocumentOverlayPainter extends CustomPainter {
       c.bottomRight.x * size.width,
       c.bottomRight.y * size.height,
     );
-    final bl = Offset(c.bottomLeft.x * size.width, c.bottomLeft.y * size.height);
+    final bl = Offset(
+      c.bottomLeft.x * size.width,
+      c.bottomLeft.y * size.height,
+    );
 
     final path = Path()
       ..moveTo(tl.dx, tl.dy)

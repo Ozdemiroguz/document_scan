@@ -38,8 +38,14 @@ class _DraggableCornerOverlayState extends State<DraggableCornerOverlay> {
   int? _activeHandle;
   Size _size = Size.zero;
 
-  // Handles are visually ~10px but grabbable within a larger radius for touch.
-  static const double _hitRadius = 32;
+  // Generous touch target: a fingertip covers ~44px, and corners often sit near
+  // the image edge where a small radius is easy to miss. Grab within 44px.
+  static const double _hitRadius = 44;
+
+  // Lift the corner this far ABOVE the fingertip while dragging, so the finger
+  // never covers the point it's placing — the classic "can't see what I'm
+  // adjusting" problem. The corner tracks the finger with a constant offset.
+  static const double _touchLift = 40;
 
   List<({double x, double y})> get _points => [
     widget.corners.topLeft,
@@ -69,10 +75,12 @@ class _DraggableCornerOverlayState extends State<DraggableCornerOverlay> {
   void _onPanUpdate(DragUpdateDetails d) {
     final handle = _activeHandle;
     if (handle == null || _size.isEmpty) return;
-    // Clamp to the image bounds so a corner can't be dragged off-image.
+    // Place the corner slightly above the fingertip so the finger doesn't
+    // occlude it, then clamp to the image so it can't be dragged off-edge.
+    final lifted = d.localPosition - const Offset(0, _touchLift);
     widget.onCornerMoved(handle, (
-      x: (d.localPosition.dx / _size.width).clamp(0.0, 1.0),
-      y: (d.localPosition.dy / _size.height).clamp(0.0, 1.0),
+      x: (lifted.dx / _size.width).clamp(0.0, 1.0),
+      y: (lifted.dy / _size.height).clamp(0.0, 1.0),
     ));
   }
 
@@ -145,10 +153,29 @@ class _CornerPainter extends CustomPainter {
     final handles = [tl, tr, br, bl];
     for (var i = 0; i < 4; i++) {
       final isActive = i == active;
-      // White ring + accent fill; the active handle is larger for feedback.
-      final r = isActive ? 13.0 : 10.0;
-      canvas.drawCircle(handles[i], r + 2, Paint()..color = Colors.white);
-      canvas.drawCircle(handles[i], r, Paint()..color = handle);
+      final c = handles[i];
+
+      if (isActive) {
+        // A soft "grabbed" halo so it's obvious which corner is being moved,
+        // and a small crosshair marking the exact placed point (which now sits
+        // above the finger, so it's fully visible).
+        canvas.drawCircle(
+          c,
+          28,
+          Paint()..color = handle.withValues(alpha: 0.18),
+        );
+        final cross = Paint()
+          ..color = Colors.white
+          ..strokeWidth = 1.5;
+        canvas.drawLine(c + const Offset(-9, 0), c + const Offset(9, 0), cross);
+        canvas.drawLine(c + const Offset(0, -9), c + const Offset(0, 9), cross);
+      }
+
+      // Larger, easier-to-see targets: a white ring + accent fill, the active
+      // one bigger for feedback.
+      final r = isActive ? 16.0 : 13.0;
+      canvas.drawCircle(c, r + 3, Paint()..color = Colors.white);
+      canvas.drawCircle(c, r, Paint()..color = handle);
     }
   }
 
