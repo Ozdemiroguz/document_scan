@@ -1,0 +1,22 @@
+# Keep the published archive focused on the package + the example's Dart code.
+
+# Build artifacts and tool caches — never belong in a published package. A
+# `flutter test` run leaves a multi-MB .dill cache under build/, which would
+# otherwise balloon the archive.
+build/
+.dart_tool/
+
+# The example's platform scaffolding (Xcode/Gradle projects, app icons, launch
+# storyboards) is only needed to *run* the demo locally — it's noise on the
+# pub.dev "Source" tab and bloats the archive. Exclude it; the example's lib/,
+# pubspec.yaml and README still ship so the demo code is browsable.
+example/ios/
+example/android/
+example/linux/
+example/macos/
+example/windows/
+example/web/
+example/build/
+example/.dart_tool/
+example/integration_test/
+example/test/
