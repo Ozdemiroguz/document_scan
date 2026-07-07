@@ -246,5 +246,43 @@ void main() {
 
       await sub.cancel();
     });
+
+    test('closing the source mid-detection does not throw (clean teardown)',
+        () async {
+      // Hold the native call open so the frame is still in flight when the
+      // source stream completes — the realtime teardown case (stop scanning /
+      // navigate away while a frame is being processed). The in-flight frame
+      // must settle without adding to an already-closed controller.
+      final gate = Completer<void>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        await gate.future;
+        return nativeCorners();
+      });
+
+      final frames = StreamController<ScanInput>();
+      final events = <DetectionEvent>[];
+      final errors = <Object>[];
+      Object? zoneError;
+
+      await runZonedGuarded(() async {
+        final sub = detector.detectStream(frames.stream).listen(
+              events.add,
+              onError: errors.add,
+            );
+        frames.add(ScanInput.file('/1.jpg'));
+        await Future<void>.delayed(Duration.zero); // let detect() start
+        await frames.close(); // onDone fires while the frame is in flight
+        gate.complete(); // detect() resolves — must not add-after-close
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await sub.cancel();
+      }, (e, _) => zoneError = e);
+
+      expect(zoneError, isNull, reason: 'no add-after-close / unhandled error');
+      expect(errors, isEmpty);
+      // The in-flight frame still produced its event before the clean close.
+      expect(events, hasLength(1));
+      expect(events.single, isA<DocumentDetected>());
+    });
   });
 }

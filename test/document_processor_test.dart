@@ -157,6 +157,38 @@ void main() {
       expect(out.height, closeTo(120, 2));
     });
 
+    test('degenerate output (1px axis) returns a scan, never throws', () async {
+      // A very wide, ~flat region: after the size cap the short axis rounds to
+      // 1px, which used to divide by (outH-1)==0 → NaN → NaN.toInt() crash.
+      // The crop must still return a (tiny) image, honouring its no-throw
+      // contract.
+      final bytes = _pngImage(4000, 2);
+      final out = await processor.crop(
+        ScanInput.bytes(bytes, width: 4000, height: 2),
+        fullFrame,
+      );
+      expect(out, isNotNull);
+      expect(out!.height, greaterThanOrEqualTo(1));
+      expect(out.width, greaterThanOrEqualTo(1));
+    });
+
+    test('a collapsed-edge quad does not throw', () async {
+      // topLeft == topRight collapses the top edge to a point.
+      final bytes = _pngImage(100, 100);
+      const collapsed = DocumentCorners(
+        topLeft: (x: 0.5, y: 0.5),
+        topRight: (x: 0.5, y: 0.5),
+        bottomRight: (x: 0.9, y: 0.9),
+        bottomLeft: (x: 0.1, y: 0.9),
+      );
+      final out = await processor.crop(
+        ScanInput.bytes(bytes, width: 100, height: 100),
+        collapsed,
+      );
+      // May be a thin sliver, but must not throw.
+      expect(out, isNotNull);
+    });
+
     test('returns null for undecodable bytes (does not throw)', () async {
       // Malformed bytes must be swallowed into a null result, per the contract.
       final out = await processor.crop(

@@ -58,14 +58,28 @@ class DocumentDetector {
   }) {
     late final StreamController<DetectionEvent> controller;
     var busy = false;
+    var sourceDone = false;
     StreamSubscription<ScanInput>? sub;
+
+    // Emit only while the controller is open. The source stream can complete
+    // (onDone) while a frame's detect() is still awaiting — closing the
+    // controller then would make the in-flight add() throw "add after close".
+    void emit(DetectionEvent event) {
+      if (!controller.isClosed) controller.add(event);
+    }
+
+    // Close only when the source is done AND no frame is in flight, so a
+    // mid-flight frame settles into an event instead of adding to a closed sink.
+    void closeIfIdle() {
+      if (sourceDone && !busy && !controller.isClosed) controller.close();
+    }
 
     controller = StreamController<DetectionEvent>(
       onListen: () {
         sub = frames.listen(
           (frame) async {
             if (busy) {
-              controller.add(const FrameDropped());
+              emit(const FrameDropped());
               return; // drop frame — keep the pipeline responsive
             }
             busy = true;
@@ -74,7 +88,7 @@ class DocumentDetector {
               final smoothed = stabilize == null
                   ? corners
                   : stabilize.add(corners);
-              controller.add(
+              emit(
                 smoothed == null
                     ? const NoDocument()
                     : DocumentDetected(smoothed),
@@ -83,13 +97,19 @@ class DocumentDetector {
               // Reset the smoother so a post-error document doesn't slide in
               // from a stale position.
               stabilize?.reset();
-              controller.add(DetectionError(e, st));
+              emit(DetectionError(e, st));
             } finally {
               busy = false;
+              closeIfIdle(); // the source may have completed mid-flight
             }
           },
-          onError: controller.addError,
-          onDone: controller.close,
+          onError: (Object e, StackTrace st) {
+            if (!controller.isClosed) controller.addError(e, st);
+          },
+          onDone: () {
+            sourceDone = true;
+            closeIfIdle();
+          },
         );
       },
       onCancel: () async {

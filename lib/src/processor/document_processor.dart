@@ -47,6 +47,10 @@ class DocumentProcessor {
     ScanOutputFormat output = ScanOutputFormat.png,
     int? maxDimension = defaultMaxDimension,
   }) async {
+    assert(
+      maxDimension == null || maxDimension >= 1,
+      'maxDimension must be null (uncapped) or >= 1.',
+    );
     final source = await _decodeToImage(input);
     if (source == null) return null;
 
@@ -179,10 +183,16 @@ class DocumentProcessor {
 
     // Inverse bilinear map: for each output pixel, find its source via the unit
     // square -> quad mapping and sample. This is the standard four-corner warp.
+    // Guard the divisor: a degenerate quad (a collapsed edge, or a very wide/thin
+    // region that the size cap rounds to a 1px axis) gives outW/outH == 1, and
+    // `x / (outW - 1)` would be 0/0 = NaN → NaN.toInt() throws inside the sampler.
+    // A single row/column maps to parameter 0, so clamp the divisor to at least 1.
+    final duW = outW > 1 ? outW - 1 : 1;
+    final duH = outH > 1 ? outH - 1 : 1;
     for (var y = 0; y < outH; y++) {
-      final v = y / (outH - 1);
+      final v = y / duH;
       for (var x = 0; x < outW; x++) {
-        final u = x / (outW - 1);
+        final u = x / duW;
         // Bilinear interpolation of the four corners.
         final sx =
             (1 - u) * (1 - v) * tl.x +
