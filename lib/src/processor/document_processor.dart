@@ -101,6 +101,18 @@ class DocumentProcessor {
     try {
       switch (input) {
         case FileScanInput(:final path):
+          // ORIENTATION CONTRACT: corners are in EXIF-*oriented* (upright)
+          // space — Apple Vision applies the file's orientation, and the
+          // Android native side bakes it before detecting. The crop must sample
+          // pixels in that same space or an iPhone portrait photo (EXIF 6/8)
+          // warps 90° off. `image`'s JPEG/PNG decoders already apply EXIF
+          // orientation on decode and clear the tag (see image package
+          // _jpeg_quantize: it rotates and nulls imageIfd.orientation), so
+          // `decodeImageFile` returns upright pixels — aligned with the
+          // corners. A `bakeOrientation` here would be a redundant no-op. This
+          // invariant is locked by document_processor_orientation_test.dart; if
+          // a future decoder stops auto-applying EXIF, that test fails and a
+          // `bakeOrientation` call belongs right here.
           return await img.decodeImageFile(path);
         case BytesScanInput(:final bytes):
           return img.decodeImage(bytes);
