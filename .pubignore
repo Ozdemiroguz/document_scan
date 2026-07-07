@@ -1,10 +1,12 @@
 # Keep the published archive focused on the package + the example's Dart code.
 
-# Build artifacts and tool caches — never belong in a published package. A
-# `flutter test` run leaves a multi-MB .dill cache under build/, which would
-# otherwise balloon the archive.
+# Build artifacts, tool caches, and IDE project files — never belong in a
+# published package. A `flutter test` run leaves a multi-MB .dill cache under
+# build/, and IntelliJ/Android Studio drop a *.iml that's noise on the Source tab.
 build/
 .dart_tool/
+*.iml
+.idea/
 
 # The example's platform scaffolding (Xcode/Gradle projects, app icons, launch
 # storyboards) is only needed to *run* the demo locally — it's noise on the
