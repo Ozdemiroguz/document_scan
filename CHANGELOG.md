@@ -16,13 +16,21 @@ Initial release.
   jittering; snaps rather than slides when the document jumps.
 - `DocumentProcessor` — pure-Dart perspective correction (`crop`) with
   `grayscale`, `enhance`, `blackWhite`, `sharpen`, and adaptive `magicColor`
-  filters. Output as PNG, JPEG (quality-tunable), or a single-page PDF via
-  `ScanOutputFormat`. Undecodable input returns `null` rather than throwing.
+  filters. Output as PNG, JPEG, or a single-page PDF via `ScanOutputFormat`.
+  Undecodable input (and a degenerate/1px warp) returns `null` rather than
+  throwing.
 - `AutoCaptureAnalyzer` — pure-Dart stream analyzer that signals when a document
-  has been held steady and confident long enough to auto-capture.
+  has been held steady and confident long enough to auto-capture. Pipe the
+  detector straight in with `bindEvents(detectStream(...))` (or `bindCorners` /
+  `addEvent` for finer control) — the event distinctions are preserved.
+- `DocumentProcessor.crop` caps the warp output's long side at `maxDimension`
+  (default 2000px, aspect-preserving; pass `null` to warp at full resolution) so
+  a near-full-frame high-megapixel photo doesn't produce a needlessly huge scan.
 - `ScanSession` — an immutable multi-page container (add / reorder / remove).
-- Plugin-free value types: `ScanInput`, `DocumentCorners` (geometry-ordered
-  corners + confidence), `ScannedDocument`, `ScanFilter`, `ScanOutputFormat`.
+- Plugin-free value types with value equality: `ScanInput` (with format-specific
+  `bgraFrame` / `yuvFrame` frame factories), `DocumentCorners` (geometry-ordered
+  corners + confidence), `ScannedDocument`, `ScanFilter`, `ScanOutputFormat`
+  (`png` / `jpeg` / `pdf` constants, plus `jpegAt(quality)`).
 - Example app with four flows: gallery scan, realtime overlay (detectStream +
   CornerStabilizer + AutoCaptureAnalyzer over a live camera), manual corner
   edit (drag-adjust → crop with `corners:`), and reprocess (detect once, swap
