@@ -21,6 +21,8 @@ dependencies:
     sdk: flutter
   # Pure-Dart image decode/encode + perspective warp + filters (Processor).
   image: ^4.5.4
+  # @internal / other annotations (pure Dart, no transitive weight).
+  meta: ^1.16.0
   # Pure-Dart PDF generation, used by DocumentProcessor when the caller picks
   # ScanOutputFormat.pdf — a scan encodes to a single-page A4 PDF instead of an
   # image. No native code involved.

@@ -21,12 +21,23 @@ import '../types/scanned_document.dart';
 class DocumentProcessor {
   const DocumentProcessor();
 
+  /// The default cap on the warped output's long side, in pixels. A document
+  /// scan is legible and OCR-ready well below full-sensor resolution, so
+  /// warping a near-full-frame 12 MP photo at its native ~4000px would burn
+  /// CPU and memory (the warp is a per-output-pixel bilinear sample in Dart)
+  /// for no visible gain. Capping at 2000px keeps the common case fast; pass a
+  /// different `maxDimension` (or `null`) to [crop] to change or lift it.
+  static const defaultMaxDimension = 2000;
+
   /// Perspective-corrects the document bounded by [corners] out of [input] and
   /// returns it as an upright rectangle. [filter] post-processes the result.
   ///
   /// [corners] are normalized 0..1 relative to [input]'s image. The output
   /// resolution matches the document's real edge lengths, so a near-square card
-  /// and a tall page both come out proportioned correctly.
+  /// and a tall page both come out proportioned correctly — but the long side is
+  /// capped at [maxDimension] (default [defaultMaxDimension], pass `null` to
+  /// warp at full resolution) so a near-full-frame high-megapixel photo doesn't
+  /// produce a needlessly huge, slow warp. The aspect ratio is preserved.
   ///
   /// Returns `null` if the input image can't be decoded.
   Future<ScannedDocument?> crop(
@@ -34,11 +45,12 @@ class DocumentProcessor {
     DocumentCorners corners, {
     ScanFilter filter = ScanFilter.none,
     ScanOutputFormat output = ScanOutputFormat.png,
+    int? maxDimension = defaultMaxDimension,
   }) async {
     final source = await _decodeToImage(input);
     if (source == null) return null;
 
-    final warped = _perspectiveWarp(source, corners);
+    final warped = _perspectiveWarp(source, corners, maxDimension: maxDimension);
     final filtered = _applyFilter(warped, filter);
     return await _encode(filtered, output);
   }
@@ -129,7 +141,11 @@ class DocumentProcessor {
 
   // --- perspective warp ---
 
-  img.Image _perspectiveWarp(img.Image src, DocumentCorners corners) {
+  img.Image _perspectiveWarp(
+    img.Image src,
+    DocumentCorners corners, {
+    int? maxDimension,
+  }) {
     final w = src.width;
     final h = src.height;
     final px = corners.toPixels(w, h);
@@ -145,8 +161,19 @@ class DocumentProcessor {
     final widthBottom = dist(bl, br);
     final heightLeft = dist(tl, bl);
     final heightRight = dist(tr, br);
-    final outW = ((widthTop + widthBottom) / 2).round().clamp(1, w * 2);
-    final outH = ((heightLeft + heightRight) / 2).round().clamp(1, h * 2);
+    var outW = ((widthTop + widthBottom) / 2).round().clamp(1, w * 2);
+    var outH = ((heightLeft + heightRight) / 2).round().clamp(1, h * 2);
+
+    // Cap the long side at maxDimension, scaling both axes together so the
+    // document's aspect ratio is preserved (a tall page stays tall).
+    if (maxDimension != null) {
+      final longSide = math.max(outW, outH);
+      if (longSide > maxDimension) {
+        final scale = maxDimension / longSide;
+        outW = (outW * scale).round().clamp(1, outW);
+        outH = (outH * scale).round().clamp(1, outH);
+      }
+    }
 
     final dst = img.Image(width: outW, height: outH, numChannels: 3);
 

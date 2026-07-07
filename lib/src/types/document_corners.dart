@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:meta/meta.dart';
+
 /// A single 2D point in normalized image space (0..1), origin top-left.
 typedef ScanPoint = ({double x, double y});
 
@@ -160,11 +162,17 @@ class DocumentCorners {
   /// A geometric confidence heuristic in 0..1 for engines that don't provide a
   /// probability (e.g. OpenCV on Android).
   ///
+  /// Internal: the detector already runs this to populate [confidence] on
+  /// Android results, so consumers should read the [confidence] field rather
+  /// than call this — the derivation is an implementation detail that may
+  /// change. Exposed only so the detector (a separate library) can reach it.
+  ///
   /// Combines three cheap sanity signals: the quad must be convex, cover a
   /// plausible fraction of the frame (neither a speck nor the whole image), and
   /// have a document-like aspect ratio. Returns a blended score — not a
   /// calibrated probability, just a relative "does this look like a document"
   /// ranking, honestly distinct from a native engine's own value.
+  @internal
   double geometricConfidence() {
     if (!isConvex) return 0;
 

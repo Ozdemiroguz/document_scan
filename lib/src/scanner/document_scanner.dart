@@ -47,15 +47,24 @@ class DocumentScanner {
   ///
   /// [filter] post-processes the result (default [ScanFilter.enhance] for a
   /// clean scanned look); [output] picks the encoding (default PNG).
+  /// [maxDimension] caps the output's long side (see [DocumentProcessor.crop]);
+  /// pass `null` to warp at full resolution.
   Future<ScannedDocument?> scan(
     ScanInput input, {
     DocumentCorners? corners,
     ScanFilter filter = ScanFilter.enhance,
     ScanOutputFormat output = ScanOutputFormat.png,
+    int? maxDimension = DocumentProcessor.defaultMaxDimension,
   }) async {
     final quad = corners ?? await _detector.detect(input);
     if (quad == null) return null;
-    return processor.crop(input, quad, filter: filter, output: output);
+    return processor.crop(
+      input,
+      quad,
+      filter: filter,
+      output: output,
+      maxDimension: maxDimension,
+    );
   }
 
   /// Detects the document corners in [input] without cropping — useful when you

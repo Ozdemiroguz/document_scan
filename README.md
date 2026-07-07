@@ -186,6 +186,33 @@ different container:
 - `ScannedDocument` — the encoded `bytes` (PNG / JPEG / PDF per `output`) plus
   the image `width`/`height`.
 
+## Platform differences
+
+Corner detection is native, and the two engines are not identical. None of this
+leaks into the API — you always get normalized corners — but it affects *what*
+gets detected, so it's documented honestly rather than hidden:
+
+- **Detection engine.** iOS uses Apple Vision (`VNDetectRectanglesRequest`);
+  Android uses an OpenCV contour pipeline. The same photo can be found on one
+  platform and missed on the other, especially near the edges of detectability.
+- **Aspect / size gating.** iOS applies Vision's own gates at detection
+  (min aspect 0.1, max aspect 1.0, min size 5% of frame), so a very wide
+  landscape document may be filtered out on iOS but not Android, which takes the
+  largest convex quad and scores aspect only afterward.
+- **`confidence` is not comparable across platforms.** On iOS it's Vision's own
+  probability; on Android there is no native probability, so it's a geometric
+  heuristic (convexity + area + aspect) with a ~0.4 floor. Don't reuse a single
+  `minConfidence` / `AutoCaptureAnalyzer` threshold across platforms expecting
+  identical behaviour — tune per platform if you gate on it.
+- **Realtime frame format.** iOS streams accept **BGRA only**; Android accepts
+  **YUV420 or BGRA**. Feed BGRA on iOS, YUV420 (or BGRA) on Android. `detectFile`
+  (still images) has no such restriction.
+- **Detection resolution.** Both platforms detect at a capped resolution for
+  speed, and — importantly — the still-image and live-frame paths use the *same*
+  cap so a document detects consistently whether it comes from the gallery or the
+  camera. (Android caps both at 720px; iOS Vision's gates are resolution-relative,
+  so its paths agree without an explicit cap.)
+
 ## App size
 
 Corner detection is native, but stays light:

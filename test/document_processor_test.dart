@@ -99,6 +99,64 @@ void main() {
       expect(center.b, lessThan(80));
     });
 
+    test('caps the output long side at maxDimension by default', () async {
+      // A 3000x2000 source cropped full-frame would warp to ~3000x2000; the
+      // default cap (2000) must scale it down so the long side is ~2000.
+      final bytes = _pngImage(3000, 2000);
+      final out = await processor.crop(
+        ScanInput.bytes(bytes, width: 3000, height: 2000),
+        fullFrame,
+      );
+
+      expect(out, isNotNull);
+      expect(out!.width, lessThanOrEqualTo(2000));
+      expect(out.height, lessThanOrEqualTo(2000));
+      // Long side lands right at the cap (within rounding).
+      expect(out.width, closeTo(2000, 2));
+      // Aspect ratio preserved: 3000:2000 == 3:2, so height ~= 1333.
+      expect(out.height, closeTo(1333, 3));
+    });
+
+    test('maxDimension: null warps at full resolution', () async {
+      final bytes = _pngImage(3000, 2000);
+      final out = await processor.crop(
+        ScanInput.bytes(bytes, width: 3000, height: 2000),
+        fullFrame,
+        maxDimension: null,
+      );
+
+      expect(out, isNotNull);
+      expect(out!.width, closeTo(3000, 2));
+      expect(out.height, closeTo(2000, 2));
+    });
+
+    test('a custom maxDimension is honoured', () async {
+      final bytes = _pngImage(3000, 2000);
+      final out = await processor.crop(
+        ScanInput.bytes(bytes, width: 3000, height: 2000),
+        fullFrame,
+        maxDimension: 900,
+      );
+
+      expect(out, isNotNull);
+      expect(out!.width, closeTo(900, 2));
+      expect(out.height, closeTo(600, 2)); // 3:2 preserved
+    });
+
+    test('an already-small document is not upscaled by maxDimension', () async {
+      // Long side (200) is under the cap → output stays at edge-length size.
+      final bytes = _pngImage(200, 120);
+      final out = await processor.crop(
+        ScanInput.bytes(bytes, width: 200, height: 120),
+        fullFrame,
+        maxDimension: 2000,
+      );
+
+      expect(out, isNotNull);
+      expect(out!.width, closeTo(200, 2));
+      expect(out.height, closeTo(120, 2));
+    });
+
     test('returns null for undecodable bytes (does not throw)', () async {
       // Malformed bytes must be swallowed into a null result, per the contract.
       final out = await processor.crop(
