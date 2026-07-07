@@ -83,15 +83,52 @@ if (corners != null) {
 ## Scan from a live camera stream
 
 The package never opens a camera. Feed it frames from your own capture (e.g. the
-[`camera`](https://pub.dev/packages/camera) package) as `ScanInput`s:
+[`camera`](https://pub.dev/packages/camera) package) as `ScanInput`s. Each frame
+yields a `DetectionEvent` so you can tell *why* a frame had no corners — no
+document, a dropped frame under load, or a detection error — instead of a
+blind `null`:
 
 ```dart
 final subscription = detector
     .detectStream(myCameraFrames) // Stream<ScanInput>
-    .listen((corners) {
-      // Draw `corners` in your overlay (a CustomPainter, etc.).
-      setState(() => _corners = corners);
+    .listen((event) {
+      switch (event) {
+        case DocumentDetected(:final corners):
+          setState(() => _corners = corners); // draw in your overlay
+        case NoDocument():
+          setState(() => _corners = null);    // hint: "point at a document"
+        case FrameDropped():
+          break; // normal backpressure under load — ignore
+        case DetectionError(:final error):
+          debugPrint('detect failed: $error'); // stream stays alive
+      }
     });
+```
+
+### Steady overlay (corner stabilization)
+
+Raw corners jitter a pixel or two every frame even for a still document. Pass a
+`CornerStabilizer` to smooth them for the overlay — an exponential moving
+average that damps jitter but still tracks real movement, and snaps (rather than
+slides) when the document jumps:
+
+```dart
+detector.detectStream(myCameraFrames, stabilize: CornerStabilizer());
+// DocumentDetected.corners are now smoothed. Tune CornerStabilizer(smoothing:,
+// resetDistance:) for steadier-but-laggier vs snappier.
+```
+
+### Auto-capture
+
+Wire `AutoCaptureAnalyzer` to fire once the document has been held steady and
+confident long enough — you take the still and crop it:
+
+```dart
+final analyzer = AutoCaptureAnalyzer();
+// feed it the detected corners each frame (null when none):
+analyzer.bind(cornerStream).listen((state) {
+  if (state.status == AutoCaptureStatus.ready) capture();
+});
 ```
 
 Frames that arrive while a previous one is still being processed are dropped, so

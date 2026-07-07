@@ -6,9 +6,14 @@ Initial release.
   `corners:` to skip detection and crop user-adjusted corners instead.
 - `DocumentDetector` — document corner detection for still images (`detect`) and
   live camera frames (`detectStream`), backed by Apple Vision on iOS and OpenCV
-  on Android, with per-frame downscaling for realtime performance. Frames are
-  dropped under backpressure so the pipeline never backs up. Corners carry a
-  `confidence` (engine value on iOS, geometric heuristic on Android).
+  on Android, with per-frame downscaling for realtime performance. `detectStream`
+  emits a sealed `DetectionEvent` (`DocumentDetected` / `NoDocument` /
+  `FrameDropped` / `DetectionError`) so a consumer can tell an empty scene from a
+  backpressure drop from a native error, rather than a blind `null`. Corners
+  carry a `confidence` (engine value on iOS, geometric heuristic on Android).
+- `CornerStabilizer` — optional EMA smoothing for the live corner stream, so an
+  overlay drawn from `detectStream(stabilize: ...)` stays steady instead of
+  jittering; snaps rather than slides when the document jumps.
 - `DocumentProcessor` — pure-Dart perspective correction (`crop`) with
   `grayscale`, `enhance`, `blackWhite`, `sharpen`, and adaptive `magicColor`
   filters. Output as PNG, JPEG (quality-tunable), or a single-page PDF via

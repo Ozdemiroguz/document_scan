@@ -22,6 +22,8 @@
 library;
 
 export 'src/detector/auto_capture_analyzer.dart';
+export 'src/detector/corner_stabilizer.dart';
+export 'src/detector/detection_event.dart';
 export 'src/detector/document_detector.dart';
 export 'src/processor/document_processor.dart';
 export 'src/scanner/document_scanner.dart';

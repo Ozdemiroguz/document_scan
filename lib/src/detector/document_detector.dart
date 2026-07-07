@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 
 import '../types/document_corners.dart';
 import '../types/scan_input.dart';
+import 'corner_stabilizer.dart';
+import 'detection_event.dart';
 
 /// Finds the four corners of a document in an image or camera frame.
 ///
@@ -36,27 +38,52 @@ class DocumentDetector {
     return _decode(result);
   }
 
-  /// Runs detection over a stream of camera frames, emitting the latest corners
-  /// (or `null` when none are found). Frames that arrive while a previous one is
-  /// still being processed are dropped, so the stream never backs up.
+  /// Runs detection over a stream of camera frames, emitting a [DetectionEvent]
+  /// per handled frame so the consumer can tell *why* a frame produced no
+  /// corners: [DocumentDetected], [NoDocument], [FrameDropped] (skipped under
+  /// backpressure), or [DetectionError] (native threw — the stream stays alive).
+  ///
+  /// Frames that arrive while a previous one is still being processed are
+  /// dropped (emitting [FrameDropped]) so the stream never backs up.
+  ///
+  /// Pass a [stabilize] filter to smooth jittery corners for an overlay — each
+  /// [DocumentDetected] then carries the EMA-smoothed corners. Omit it for the
+  /// raw per-frame corners.
   ///
   /// The package does not own the camera — pass frames from your own capture
   /// (e.g. the `camera` package's image stream) as [CameraFrameScanInput]s.
-  Stream<DocumentCorners?> detectStream(Stream<ScanInput> frames) {
-    late final StreamController<DocumentCorners?> controller;
+  Stream<DetectionEvent> detectStream(
+    Stream<ScanInput> frames, {
+    CornerStabilizer? stabilize,
+  }) {
+    late final StreamController<DetectionEvent> controller;
     var busy = false;
     StreamSubscription<ScanInput>? sub;
 
-    controller = StreamController<DocumentCorners?>(
+    controller = StreamController<DetectionEvent>(
       onListen: () {
         sub = frames.listen(
           (frame) async {
-            if (busy) return; // drop frame — keep the pipeline responsive
+            if (busy) {
+              controller.add(const FrameDropped());
+              return; // drop frame — keep the pipeline responsive
+            }
             busy = true;
             try {
-              controller.add(await detect(frame));
-            } catch (_) {
-              controller.add(null);
+              final corners = await detect(frame);
+              final smoothed = stabilize == null
+                  ? corners
+                  : stabilize.add(corners);
+              controller.add(
+                smoothed == null
+                    ? const NoDocument()
+                    : DocumentDetected(smoothed),
+              );
+            } catch (e, st) {
+              // Reset the smoother so a post-error document doesn't slide in
+              // from a stale position.
+              stabilize?.reset();
+              controller.add(DetectionError(e, st));
             } finally {
               busy = false;
             }

@@ -167,8 +167,8 @@ void main() {
       });
 
       final frames = StreamController<ScanInput>();
-      final results = <DocumentCorners?>[];
-      final sub = detector.detectStream(frames.stream).listen(results.add);
+      final events = <DetectionEvent>[];
+      final sub = detector.detectStream(frames.stream).listen(events.add);
 
       // Fire two frames back-to-back while the first is still in flight.
       frames.add(ScanInput.file('/1.jpg'));
@@ -180,24 +180,52 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       // Only the first frame reached native; the second was dropped by the
-      // busy guard, so at most one result was produced.
+      // busy guard and surfaced as a distinct FrameDropped event (not silence).
       expect(nativeCalls, 1);
-      expect(results.length, lessThanOrEqualTo(1));
+      expect(events.whereType<FrameDropped>(), hasLength(1));
+      expect(events.whereType<DocumentDetected>(), hasLength(1));
 
       await sub.cancel();
       await frames.close();
     });
 
-    test('emits null (not error) when a frame detection throws', () async {
+    test('emits DetectionError (not a raw throw) when a frame throws, and the '
+        'stream stays alive', () async {
       responder = (_) => throw PlatformException(code: 'BAD_FRAME');
       final frames = StreamController<ScanInput>();
-      final results = <DocumentCorners?>[];
-      final sub = detector.detectStream(frames.stream).listen(results.add);
+      final events = <DetectionEvent>[];
+      final errors = <Object>[];
+      final sub = detector.detectStream(frames.stream).listen(
+            events.add,
+            onError: errors.add,
+          );
 
       frames.add(ScanInput.file('/1.jpg'));
       await Future<void>.delayed(const Duration(milliseconds: 10));
 
-      expect(results, [null]); // swallowed into a null emission, stream alive
+      // The throw is delivered as a DetectionError event, not an onError, so the
+      // stream is not torn down.
+      expect(errors, isEmpty);
+      expect(events, hasLength(1));
+      final event = events.single;
+      expect(event, isA<DetectionError>());
+      expect((event as DetectionError).error, isA<PlatformException>());
+
+      await sub.cancel();
+      await frames.close();
+    });
+
+    test('emits NoDocument when a frame holds no rectangle', () async {
+      responder = (_) => null; // native found nothing
+      final frames = StreamController<ScanInput>();
+      final events = <DetectionEvent>[];
+      final sub = detector.detectStream(frames.stream).listen(events.add);
+
+      frames.add(ScanInput.file('/1.jpg'));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(events, hasLength(1));
+      expect(events.single, isA<NoDocument>());
 
       await sub.cancel();
       await frames.close();

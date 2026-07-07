@@ -260,6 +260,19 @@ class DocumentCorners {
   }
 
   @override
+  bool operator ==(Object other) =>
+      other is DocumentCorners &&
+      other.topLeft == topLeft &&
+      other.topRight == topRight &&
+      other.bottomRight == bottomRight &&
+      other.bottomLeft == bottomLeft &&
+      other.confidence == confidence;
+
+  @override
+  int get hashCode =>
+      Object.hash(topLeft, topRight, bottomRight, bottomLeft, confidence);
+
+  @override
   String toString() =>
       'DocumentCorners(TL:$topLeft TR:$topRight BR:$bottomRight BL:$bottomLeft'
       '${confidence == null ? '' : ', conf:${confidence!.toStringAsFixed(2)}'})';
