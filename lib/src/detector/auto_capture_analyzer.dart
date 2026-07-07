@@ -145,8 +145,9 @@ class AutoCaptureAnalyzer {
     );
   }
 
-  /// Convenience: transform a raw corner stream into a state stream.
-  Stream<AutoCaptureState> bind(Stream<DocumentCorners?> detections) {
+  /// Convenience: transform a raw corner stream into a state stream. Pairs with
+  /// [bindEvents] for a [DetectionEvent] stream.
+  Stream<AutoCaptureState> bindCorners(Stream<DocumentCorners?> detections) {
     return detections.map(add);
   }
 

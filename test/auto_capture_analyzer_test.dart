@@ -102,7 +102,7 @@ void main() {
     });
   });
 
-  group('bind() stream', () {
+  group('bindCorners() stream', () {
     test('maps a detection stream to state and fires ready', () async {
       final a = AutoCaptureAnalyzer(requiredSteadyFrames: 3);
       final input = Stream<DocumentCorners?>.fromIterable([
@@ -111,7 +111,7 @@ void main() {
         goodDoc(),
         goodDoc(),
       ]);
-      final states = await a.bind(input).toList();
+      final states = await a.bindCorners(input).toList();
       expect(states.first.status, AutoCaptureStatus.searching);
       expect(states.last.shouldCapture, isTrue);
     });

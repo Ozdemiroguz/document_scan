@@ -125,10 +125,16 @@ confident long enough — you take the still and crop it:
 
 ```dart
 final analyzer = AutoCaptureAnalyzer();
-// feed it the detected corners each frame (null when none):
-analyzer.bind(cornerStream).listen((state) {
+
+// Pipe the detector's event stream straight in — bindEvents keeps the
+// FrameDropped / DetectionError distinction (a dropped frame holds the
+// countdown; a lost document resets it):
+analyzer.bindEvents(detector.detectStream(frames)).listen((state) {
   if (state.status == AutoCaptureStatus.ready) capture();
 });
+
+// Or, if you already have a plain corner stream, use bindCorners(cornerStream)
+// — or call analyzer.add(corners) yourself per frame.
 ```
 
 Frames that arrive while a previous one is still being processed are dropped, so
