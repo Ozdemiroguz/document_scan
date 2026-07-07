@@ -1,28 +1,63 @@
-# document_scan
+# 📄 document_scan
+
+[![pub package](https://img.shields.io/pub/v/document_scan.svg)](https://pub.dev/packages/document_scan)
+[![pub points](https://img.shields.io/pub/points/document_scan)](https://pub.dev/packages/document_scan/score)
+[![likes](https://img.shields.io/pub/likes/document_scan)](https://pub.dev/packages/document_scan/score)
+[![platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-blue.svg)](https://pub.dev/packages/document_scan)
+[![license: MIT](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
+
+![Flutter](https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)
+![Dart](https://img.shields.io/badge/Dart-0175C2?style=for-the-badge&logo=dart&logoColor=white)
+![OpenCV](https://img.shields.io/badge/OpenCV-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white)
+![Apple Vision](https://img.shields.io/badge/Apple%20Vision-000000?style=for-the-badge&logo=apple&logoColor=white)
 
 A composable, native-light document scanner for Flutter. Find a document's four
 corners in a photo or a live camera frame, then perspective-correct and filter it
 into a clean scan.
 
-- **Composable, not a black box.** Two independent pieces — a `DocumentDetector`
+- 🧩 **Composable, not a black box.** Two independent pieces — a `DocumentDetector`
   that finds corners and a `DocumentProcessor` that warps and filters. Use them
   together, or take just the part you need.
-- **Widget-free.** The package returns *data* (corners, image bytes). You build
+- 🎛️ **Widget-free.** The package returns *data* (corners, image bytes). You build
   the camera UI, the overlay, and the "capture" button exactly how you want.
-- **Native-light.** Corner detection uses the platform's own vision engine —
+- 🪶 **Native-light.** Corner detection uses the platform's own vision engine —
   **Apple Vision on iOS (0 MB)** and **OpenCV on Android** — with no bundled ML
   model, no OCR, and no camera dependency.
-- **Detects documents, not text.** A page is found by its rectangle, so blank
+- 📐 **Detects documents, not text.** A page is found by its rectangle, so blank
   pages, drawings, and forms work too.
 
-## Install
+## 🔧 How it works
+
+The two pieces are independent — `DocumentScanner` just ties them together:
+
+```text
+  ScanInput          DocumentDetector          DocumentProcessor
+  (file / bytes  ──▶  native vision     ──▶     warp + filter    ──▶  ScannedDocument
+   / camera frame)    → corners (0..1)                                 (png/jpeg/pdf)
+                              │                        ▲
+              (A) automatic ──┘   (B) user drags corners┘
+
+  Live camera:  frames ──▶ detectStream ──▶ DetectionEvent
+                                │
+                                ├──▶ CornerStabilizer   (steady overlay)
+                                └──▶ AutoCaptureAnalyzer (auto-shoot)
+```
+
+Two ways to crop a still image:
+
+- **(A) Automatic** — `scanner.scan(input)` detects the corners and returns the
+  finished scan in one call. The user never touches the corners.
+- **(B) User-corrected** — show the detected corners, let the user drag them,
+  then `scanner.scan(input, corners: edited)` crops with exactly those.
+
+## 📦 Install
 
 ```yaml
 dependencies:
   document_scan: ^0.1.0
 ```
 
-## Scan a still image
+## 🖼️ Scan a still image
 
 The one-call path — `DocumentScanner` detects the corners and returns a clean,
 upright scan:
@@ -80,7 +115,7 @@ if (corners != null) {
 }
 ```
 
-## Scan from a live camera stream
+## 🎥 Scan from a live camera stream
 
 The package never opens a camera. Feed it frames from your own capture (e.g. the
 [`camera`](https://pub.dev/packages/camera) package) as `ScanInput`s. Each frame
@@ -169,7 +204,7 @@ final input = ScanInput.bgraFrame(
 );
 ```
 
-## Filters
+## 🎨 Filters
 
 `DocumentProcessor` applies pure-Dart filters after cropping:
 
@@ -182,7 +217,7 @@ final input = ScanInput.bgraFrame(
 | `sharpen`      | Crisper text edges.                          |
 | `magicColor`   | Brightened, saturated color for photos/receipts. |
 
-## Output formats
+## 💾 Output formats
 
 `output:` picks how the scan is encoded — the same cropped, filtered image, a
 different container:
@@ -194,7 +229,7 @@ different container:
 | `ScanOutputFormat.jpegAt(92)` | JPEG at a specific quality.       |
 | `ScanOutputFormat.pdf`   | A single-page A4 PDF of the scan.     |
 
-## What you get back
+## 📤 What you get back
 
 - `DocumentCorners` — four corners, always ordered top-left → top-right →
   bottom-right → bottom-left, normalized to 0..1. Ordering is derived
@@ -204,7 +239,7 @@ different container:
 - `ScannedDocument` — the encoded `bytes` (PNG / JPEG / PDF per `output`) plus
   the image `width`/`height`.
 
-## Platform differences
+## ⚖️ Platform differences
 
 Corner detection is native, and the two engines are not identical. None of this
 leaks into the API — you always get normalized corners — but it affects *what*
@@ -231,7 +266,7 @@ gets detected, so it's documented honestly rather than hidden:
   camera. (Android caps both at 720px; iOS Vision's gates are resolution-relative,
   so its paths agree without an explicit cap.)
 
-## App size
+## 📱 App size
 
 Corner detection is native, but stays light:
 
@@ -251,13 +286,23 @@ android {
 }
 ```
 
-## Design
+## 🧭 Design
 
 The package deliberately owns as little as possible: no camera, no OCR, no UI. It
 gives you corners and pixels; everything above that is yours. If a native engine
 is unavailable, detection returns `null` rather than throwing — your app keeps
 running.
 
-## License
+## 👤 Author
+
+Built by **Oğuzhan Özdemir**.
+
+[![GitHub](https://img.shields.io/badge/GitHub-Ozdemiroguz-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Ozdemiroguz)
+<!-- LinkedIn: share your profile URL and I'll add the badge here -->
+
+Issues and PRs welcome at
+[github.com/Ozdemiroguz/document_scan](https://github.com/Ozdemiroguz/document_scan).
+
+## 📄 License
 
 MIT
