@@ -10,9 +10,9 @@ import 'package:image_picker/image_picker.dart';
 ///
 /// [ScanSession] is a plain immutable value type (each edit returns a new
 /// session), so it drops straight into `setState` here — no state-management
-/// library. Each "Add page" scans one image (façade `DocumentScanner.scan`,
-/// off the UI thread) and appends it; "Export PDF" turns the collected pages
-/// into a single multi-page PDF.
+/// library. "Add pages" picks several images at once and scans each (via the
+/// `DocumentScanner.scan` façade, off the UI thread), appending them; "Export
+/// PDF" turns the collected pages into a single multi-page PDF.
 class MultiPageScreen extends StatefulWidget {
   const MultiPageScreen({super.key});
 
@@ -30,34 +30,41 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
   bool _busy = false;
   String _status = 'Add pages, reorder them, then export a PDF.';
 
-  Future<void> _addPage() async {
-    final picked = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
+  Future<void> _addPages() async {
+    // Pick several images at once — the natural multi-page flow — instead of
+    // reopening the gallery per page.
+    final picked = await ImagePicker().pickMultiImage(
       maxWidth: 2000,
       maxHeight: 2000,
     );
-    if (picked == null) return;
+    if (picked.isEmpty) return;
     setState(() {
       _busy = true;
-      _status = 'Scanning page…';
+      _status = 'Scanning ${picked.length} image(s)…';
     });
 
-    // Scan the image to a clean JPEG page (background isolate by default).
-    final scan = await _scanner.scan(
-      ScanInput.file(picked.path),
-      output: const ScanOutputFormat.jpegAt(85),
-    );
+    // Scan each picked image to a clean JPEG page and append it. A page with no
+    // detectable document is skipped (counted below) rather than aborting.
+    var skipped = 0;
+    for (final file in picked) {
+      final scan = await _scanner.scan(
+        ScanInput.file(file.path),
+        output: const ScanOutputFormat.jpegAt(85),
+      );
+      if (!mounted) return;
+      if (scan == null) {
+        skipped++;
+      } else {
+        setState(() => _session = _session.add(ScannedPage(document: scan)));
+      }
+    }
 
     if (!mounted) return;
     setState(() {
       _busy = false;
-      if (scan == null) {
-        _status = 'No document found on that image — page not added.';
-        return;
-      }
-      // Append to the session (returns a new ScanSession).
-      _session = _session.add(ScannedPage(document: scan));
-      _status = '${_session.length} page(s). Reorder, remove, or export.';
+      final skipNote = skipped == 0 ? '' : ' ($skipped had no document)';
+      _status =
+          '${_session.length} page(s)$skipNote. Reorder, remove, or export.';
     });
   }
 
@@ -102,9 +109,9 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: _busy ? null : _addPage,
-                      icon: const Icon(Icons.add_a_photo_outlined),
-                      label: const Text('Add page'),
+                      onPressed: _busy ? null : _addPages,
+                      icon: const Icon(Icons.add_photo_alternate_outlined),
+                      label: const Text('Add pages'),
                     ),
                   ),
                   const SizedBox(width: 12),
