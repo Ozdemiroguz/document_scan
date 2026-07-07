@@ -128,7 +128,8 @@ class _ManualEditScreenState extends State<ManualEditScreen> {
       _croppedBytes = scan?.bytes;
       _status = scan == null
           ? 'Could not crop — check the image.'
-          : 'Cropped ${scan.width}×${scan.height}.';
+          : 'Cropped ${scan.width}×${scan.height}. '
+                'Tap “Adjust corners” to refine.';
     });
   }
 
@@ -146,29 +147,64 @@ class _ManualEditScreenState extends State<ManualEditScreen> {
               const SizedBox(height: 12),
               Expanded(child: Center(child: _buildStage())),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _busy ? null : _pick,
-                      icon: const Icon(Icons.photo_library_outlined),
-                      label: const Text('Pick image'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: (_busy || _corners == null) ? null : _crop,
-                      icon: const Icon(Icons.crop),
-                      label: const Text('Crop'),
-                    ),
-                  ),
-                ],
-              ),
+              _buildActions(),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  // Return to the adjust view (keeps the same corners) so the user can nudge
+  // them and crop again — instead of being stuck on the result.
+  void _reAdjust() => setState(() {
+    _croppedBytes = null;
+    _status = 'Drag any corner to fine-tune, then crop.';
+  });
+
+  Widget _buildActions() {
+    // After a crop: let the user go back and adjust, or pick a new image.
+    if (_croppedBytes != null) {
+      return Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : _pick,
+              icon: const Icon(Icons.photo_library_outlined),
+              label: const Text('New image'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: _busy ? null : _reAdjust,
+              icon: const Icon(Icons.tune),
+              label: const Text('Adjust corners'),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Adjust view: pick, or crop with the current corners.
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: _busy ? null : _pick,
+            icon: const Icon(Icons.photo_library_outlined),
+            label: const Text('Pick image'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: FilledButton.icon(
+            onPressed: (_busy || _corners == null) ? null : _crop,
+            icon: const Icon(Icons.crop),
+            label: const Text('Crop'),
+          ),
+        ),
+      ],
     );
   }
 
