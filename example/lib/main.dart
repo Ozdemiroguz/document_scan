@@ -27,12 +27,16 @@ class ScanDemoPage extends StatefulWidget {
 }
 
 class _ScanDemoPageState extends State<ScanDemoPage> {
-  // The two composable pieces — used independently.
-  final _detector = DocumentDetector();
-  final _processor = const DocumentProcessor();
+  // The one-call façade: detect corners + perspective-correct + filter. Both
+  // underlying pieces (DocumentDetector, DocumentProcessor) are still usable on
+  // their own — see the README's "compose the pieces yourself" section.
+  final _scanner = DocumentScanner();
+
+  // Which enhancement to apply after cropping. `enhance` is the default clean
+  // "scanned document" look; the dropdown lets you compare the others live.
+  ScanFilter _filter = ScanFilter.enhance;
 
   String _status = 'Pick a photo of a document to scan.';
-  DocumentCorners? _corners;
   Uint8List? _scannedBytes;
   bool _busy = false;
 
@@ -42,36 +46,23 @@ class _ScanDemoPageState extends State<ScanDemoPage> {
     setState(() {
       _busy = true;
       _status = 'Detecting document edges…';
-      _corners = null;
       _scannedBytes = null;
     });
 
-    final input = ScanInput.file(picked.path);
-
-    // 1) Detect the four corners.
-    final corners = await _detector.detect(input);
-    if (corners == null) {
-      setState(() {
-        _busy = false;
-        _status = 'No document found. Try a clearer photo on a plain surface.';
-      });
-      return;
-    }
-
-    // 2) Perspective-correct + filter to a clean scan.
-    final scanned = await _processor.crop(
-      input,
-      corners,
-      filter: ScanFilter.blackWhite,
+    // One call: finds the document, warps it upright, applies the filter, and
+    // returns encoded bytes. Returns null when no document-like rectangle is
+    // found (e.g. a cluttered scene or a non-document photo).
+    final scan = await _scanner.scan(
+      ScanInput.file(picked.path),
+      filter: _filter,
     );
 
     setState(() {
       _busy = false;
-      _corners = corners;
-      _scannedBytes = scanned?.bytes;
-      _status = scanned == null
-          ? 'Corners found, but the image could not be processed.'
-          : 'Scanned ${scanned.width}×${scanned.height}.';
+      _scannedBytes = scan?.bytes;
+      _status = scan == null
+          ? 'No document found. Try a clearer photo on a plain surface.'
+          : 'Scanned ${scan.width}×${scan.height} with ${_filter.name}.';
     });
   }
 
@@ -86,12 +77,22 @@ class _ScanDemoPageState extends State<ScanDemoPage> {
           children: [
             Text(_status, style: Theme.of(context).textTheme.bodyLarge),
             const SizedBox(height: 12),
-            if (_corners != null)
-              Text(
-                'Corners (normalized): $_corners',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text('Filter: '),
+                DropdownButton<ScanFilter>(
+                  value: _filter,
+                  onChanged: _busy
+                      ? null
+                      : (f) => setState(() => _filter = f ?? _filter),
+                  items: [
+                    for (final f in ScanFilter.values)
+                      DropdownMenuItem(value: f, child: Text(f.name)),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             Expanded(
               child: Center(
                 child: _scannedBytes != null

@@ -23,6 +23,10 @@ import '../types/scanned_document.dart';
 /// scan back as a single-page PDF instead of an image. The detector and
 /// processor are injectable for testing.
 class DocumentScanner {
+  /// Creates a scanner. Both collaborators are injectable: pass a
+  /// [detector] to stub corner detection in tests, and/or a [processor] to
+  /// reuse a shared (stateless) instance. Defaults construct a platform
+  /// [DocumentDetector] and a `const DocumentProcessor`.
   DocumentScanner({
     DocumentDetector? detector,
     this.processor = const DocumentProcessor(),

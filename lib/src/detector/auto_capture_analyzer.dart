@@ -57,6 +57,10 @@ class AutoCaptureState {
 /// latches until the document leaves or moves significantly, so a single hold
 /// produces a single capture — not a burst.
 class AutoCaptureAnalyzer {
+  /// Creates an analyzer with the gating thresholds. The defaults are tuned for
+  /// a live hand-held camera; tighten [minConfidence]/[minArea] or lower
+  /// [maxJitter] to require a steadier, closer document, or raise
+  /// [requiredSteadyFrames] to demand a longer hold before firing.
   AutoCaptureAnalyzer({
     this.requiredSteadyFrames = 2,
     this.minConfidence = 0,

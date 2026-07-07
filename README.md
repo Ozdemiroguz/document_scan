@@ -19,14 +19,52 @@ into a clean scan.
 
 ```yaml
 dependencies:
-  document_scan: ^0.0.1
+  document_scan: ^0.1.0
 ```
 
 ## Scan a still image
 
+The one-call path — `DocumentScanner` detects the corners and returns a clean,
+upright scan:
+
 ```dart
 import 'package:document_scan/document_scan.dart';
 
+final scanner = DocumentScanner();
+
+final scan = await scanner.scan(ScanInput.file('/path/to/photo.jpg'));
+// null when no document-like rectangle is found.
+if (scan != null) {
+  // scan.bytes is a PNG by default — show it with Image.memory, save it, …
+  Image.memory(scan.bytes);
+}
+```
+
+Pick a filter or a different output encoding:
+
+```dart
+final pdf = await scanner.scan(
+  ScanInput.file(path),
+  filter: ScanFilter.enhance,       // clean "scanned" look (the default)
+  output: ScanOutputFormat.pdf,     // or .jpeg(quality: 92); default is PNG
+);
+// pdf!.bytes is now a single-page A4 PDF.
+```
+
+Already have user-corrected corners (e.g. from a drag-to-adjust overlay)?
+Pass them and detection is skipped:
+
+```dart
+final scan = await scanner.scan(input, corners: editedCorners);
+```
+
+### …or compose the pieces yourself
+
+`DocumentScanner` is a thin tie between two independent pieces you can use on
+their own — a `DocumentDetector` (finds corners) and a `DocumentProcessor`
+(warps + filters):
+
+```dart
 final detector = DocumentDetector();
 final processor = const DocumentProcessor();
 
@@ -37,12 +75,8 @@ final corners = await detector.detect(input);
 
 if (corners != null) {
   // 2. Perspective-correct + filter into an upright scan.
-  final scan = await processor.crop(
-    input,
-    corners,
-    filter: ScanFilter.blackWhite,
-  );
-  // scan!.bytes is a PNG — save it, show it with Image.memory, add it to a PDF…
+  final scan = await processor.crop(input, corners, filter: ScanFilter.enhance);
+  // scan!.bytes — save it, show it with Image.memory, …
 }
 ```
 
@@ -85,20 +119,35 @@ final input = ScanInput.cameraFrame(
 
 `DocumentProcessor` applies pure-Dart filters after cropping:
 
-| `ScanFilter`   | Result                              |
-| -------------- | ----------------------------------- |
-| `none`         | The cropped color image, untouched. |
-| `grayscale`    | Desaturated.                        |
-| `blackWhite`   | High-contrast "scanned paper" look. |
-| `sharpen`      | Crisper text edges.                 |
+| `ScanFilter`   | Result                                       |
+| -------------- | -------------------------------------------- |
+| `none`         | The cropped color image, untouched.          |
+| `grayscale`    | Desaturated.                                 |
+| `enhance`      | Grayscale + contrast + normalize — the clean, readable "scanned" default. |
+| `blackWhite`   | High-contrast "scanned paper" look.          |
+| `sharpen`      | Crisper text edges.                          |
+| `magicColor`   | Brightened, saturated color for photos/receipts. |
+
+## Output formats
+
+`output:` picks how the scan is encoded — the same cropped, filtered image, a
+different container:
+
+| `ScanOutputFormat`       | `bytes` are…                          |
+| ------------------------ | ------------------------------------- |
+| `ScanOutputFormat.png`   | PNG (the default).                    |
+| `ScanOutputFormat.jpeg(quality: 92)` | JPEG at the given quality. |
+| `ScanOutputFormat.pdf`   | A single-page A4 PDF of the scan.     |
 
 ## What you get back
 
 - `DocumentCorners` — four corners, always ordered top-left → top-right →
   bottom-right → bottom-left, normalized to 0..1. Ordering is derived
-  geometrically, so it's consistent regardless of platform. Includes `area`,
-  `isConvex`, `toPixels(w, h)` helpers.
-- `ScannedDocument` — PNG bytes plus width/height.
+  geometrically, so it's consistent regardless of platform. Carries a
+  `confidence` (0..1 — the engine's own on iOS, a geometric heuristic on
+  Android), plus `area`, `isConvex`, and `toPixels(w, h)` helpers.
+- `ScannedDocument` — the encoded `bytes` (PNG / JPEG / PDF per `output`) plus
+  the image `width`/`height`.
 
 ## App size
 
