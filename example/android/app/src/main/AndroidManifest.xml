@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Needed by the realtime overlay demo (the camera plugin). The
+         document_scan package itself never touches the camera. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <application
         android:label="document_scan_example"
         android:name="${applicationName}"

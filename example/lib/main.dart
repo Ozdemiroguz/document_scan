@@ -1,11 +1,22 @@
-import 'dart:typed_data';
-
-import 'package:document_scan/document_scan.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+
+import 'screens/gallery_scan_screen.dart';
+import 'screens/manual_edit_screen.dart';
+import 'screens/realtime_scan_screen.dart';
+import 'screens/reprocess_screen.dart';
 
 void main() => runApp(const DocumentScanExampleApp());
 
+/// A multi-flow tour of the `document_scan` package. Each menu entry opens a
+/// self-contained screen that exercises a different slice of the API:
+///
+/// * **Gallery scan** — the one-call [DocumentScanner.scan] façade.
+/// * **Realtime overlay** — [DocumentDetector.detectStream] with corner
+///   stabilization + an [AutoCaptureAnalyzer], drawn over a live camera preview.
+/// * **Manual corner edit** — detect, drag-adjust the quad, then crop with the
+///   user's corners.
+/// * **Reprocess with filter** — detect+crop once, then re-filter the same scan
+///   cheaply through [DocumentProcessor].
 class DocumentScanExampleApp extends StatelessWidget {
   const DocumentScanExampleApp({super.key});
 
@@ -14,106 +25,85 @@ class DocumentScanExampleApp extends StatelessWidget {
     return MaterialApp(
       title: 'document_scan example',
       theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
-      home: const ScanDemoPage(),
+      home: const HomeScreen(),
     );
   }
 }
 
-class ScanDemoPage extends StatefulWidget {
-  const ScanDemoPage({super.key});
-
-  @override
-  State<ScanDemoPage> createState() => _ScanDemoPageState();
-}
-
-class _ScanDemoPageState extends State<ScanDemoPage> {
-  // The one-call façade: detect corners + perspective-correct + filter. Both
-  // underlying pieces (DocumentDetector, DocumentProcessor) are still usable on
-  // their own — see the README's "compose the pieces yourself" section.
-  final _scanner = DocumentScanner();
-
-  // Which enhancement to apply after cropping. `enhance` is the default clean
-  // "scanned document" look; the dropdown lets you compare the others live.
-  ScanFilter _filter = ScanFilter.enhance;
-
-  String _status = 'Pick a photo of a document to scan.';
-  Uint8List? _scannedBytes;
-  bool _busy = false;
-
-  Future<void> _pickAndScan() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
-    setState(() {
-      _busy = true;
-      _status = 'Detecting document edges…';
-      _scannedBytes = null;
-    });
-
-    // One call: finds the document, warps it upright, applies the filter, and
-    // returns encoded bytes. Returns null when no document-like rectangle is
-    // found (e.g. a cluttered scene or a non-document photo).
-    final scan = await _scanner.scan(
-      ScanInput.file(picked.path),
-      filter: _filter,
-    );
-
-    setState(() {
-      _busy = false;
-      _scannedBytes = scan?.bytes;
-      _status = scan == null
-          ? 'No document found. Try a clearer photo on a plain surface.'
-          : 'Scanned ${scan.width}×${scan.height} with ${_filter.name}.';
-    });
-  }
+/// The launcher menu. Plain [StatelessWidget] + [Navigator] — no state-mgmt
+/// library, to keep the example about the package rather than the plumbing.
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final demos = <_Demo>[
+      const _Demo(
+        title: 'Gallery scan',
+        subtitle: 'One call: pick a photo → DocumentScanner.scan → clean scan.',
+        icon: Icons.photo_library_outlined,
+        builder: GalleryScanScreen.new,
+      ),
+      const _Demo(
+        title: 'Realtime overlay',
+        subtitle:
+            'Live camera → detectStream with a CornerStabilizer + '
+            'AutoCaptureAnalyzer, drawn as a quad overlay.',
+        icon: Icons.videocam_outlined,
+        builder: RealtimeScanScreen.new,
+      ),
+      const _Demo(
+        title: 'Manual corner edit',
+        subtitle:
+            'Detect the corners, drag them to correct, then crop with your '
+            'own corners.',
+        icon: Icons.crop_free,
+        builder: ManualEditScreen.new,
+      ),
+      const _Demo(
+        title: 'Reprocess with filter',
+        subtitle:
+            'Detect + crop once, then swap filters live — only the filter '
+            're-runs, not detection.',
+        icon: Icons.tune,
+        builder: ReprocessScreen.new,
+      ),
+    ];
+
     return Scaffold(
-      appBar: AppBar(title: const Text('document_scan')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(_status, style: Theme.of(context).textTheme.bodyLarge),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Text('Filter: '),
-                DropdownButton<ScanFilter>(
-                  value: _filter,
-                  onChanged: _busy
-                      ? null
-                      : (f) => setState(() => _filter = f ?? _filter),
-                  items: [
-                    for (final f in ScanFilter.values)
-                      DropdownMenuItem(value: f, child: Text(f.name)),
-                  ],
-                ),
-              ],
+      appBar: AppBar(title: const Text('document_scan demos')),
+      body: ListView.separated(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: demos.length,
+        separatorBuilder: (_, _) => const Divider(height: 1),
+        itemBuilder: (context, i) {
+          final demo = demos[i];
+          return ListTile(
+            leading: CircleAvatar(child: Icon(demo.icon)),
+            title: Text(demo.title),
+            subtitle: Text(demo.subtitle),
+            isThreeLine: true,
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => demo.builder()),
             ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: Center(
-                child: _scannedBytes != null
-                    ? Image.memory(_scannedBytes!)
-                    : const Icon(Icons.document_scanner_outlined, size: 96),
-              ),
-            ),
-            FilledButton.icon(
-              onPressed: _busy ? null : _pickAndScan,
-              icon: _busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.photo_library_outlined),
-              label: Text(_busy ? 'Scanning…' : 'Pick & scan a document'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
+}
+
+class _Demo {
+  const _Demo({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.builder,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Widget Function() builder;
 }

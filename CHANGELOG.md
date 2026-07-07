@@ -23,3 +23,7 @@ Initial release.
 - `ScanSession` — an immutable multi-page container (add / reorder / remove).
 - Plugin-free value types: `ScanInput`, `DocumentCorners` (geometry-ordered
   corners + confidence), `ScannedDocument`, `ScanFilter`, `ScanOutputFormat`.
+- Example app with four flows: gallery scan, realtime overlay (detectStream +
+  CornerStabilizer + AutoCaptureAnalyzer over a live camera), manual corner
+  edit (drag-adjust → crop with `corners:`), and reprocess (detect once, swap
+  filters live). Plain `StatefulWidget`, no state-management dependency.
