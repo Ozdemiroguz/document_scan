@@ -31,6 +31,52 @@ void main() {
       expect(c.topRight, (x: 0.90, y: 0.15)); // smallest y-x
       expect(c.bottomLeft, (x: 0.10, y: 0.85)); // largest y-x
     });
+
+    test('a diamond (45° square) yields four DISTINCT corners', () {
+      // This is the sum/diff failure mode: top and left share the smallest x+y
+      // while right and bottom share the largest, so the naive method collapses
+      // two roles onto one point. The angular fallback must recover 4 corners.
+      final c = DocumentCorners.fromUnordered(const [
+        (x: 0.5, y: 0.0), // top
+        (x: 1.0, y: 0.5), // right
+        (x: 0.5, y: 1.0), // bottom
+        (x: 0.0, y: 0.5), // left
+      ]);
+
+      final corners = {c.topLeft, c.topRight, c.bottomRight, c.bottomLeft};
+      expect(
+        corners.length,
+        4,
+        reason: 'diamond must not collapse two roles onto one point',
+      );
+      // All four input points are present exactly once.
+      expect(corners, {
+        (x: 0.5, y: 0.0),
+        (x: 1.0, y: 0.5),
+        (x: 0.5, y: 1.0),
+        (x: 0.0, y: 0.5),
+      });
+      // Ordering is a valid (convex, non-self-intersecting) ring.
+      expect(c.isConvex, isTrue);
+      // Sensible role assignment: the top-most point is a "top" corner, the
+      // bottom-most is a "bottom" corner.
+      expect(c.topLeft.y <= c.bottomLeft.y, isTrue);
+      expect(c.topRight.y <= c.bottomRight.y, isTrue);
+    });
+
+    test('a strongly rotated rectangle stays a valid convex ring', () {
+      // ~45° rotated non-square rectangle. Whatever the role labels, the result
+      // must be four distinct points forming a convex quad.
+      final c = DocumentCorners.fromUnordered(const [
+        (x: 0.50, y: 0.10),
+        (x: 0.90, y: 0.50),
+        (x: 0.50, y: 0.90),
+        (x: 0.10, y: 0.50),
+      ]);
+      final corners = {c.topLeft, c.topRight, c.bottomRight, c.bottomLeft};
+      expect(corners.length, 4);
+      expect(c.isConvex, isTrue);
+    });
   });
 
   group('geometry helpers', () {

@@ -50,10 +50,17 @@ class DocumentCorners {
 
   /// Builds ordered corners from four points in ANY order.
   ///
-  /// Uses the standard sum/diff extremes: the point with the smallest x+y is
-  /// the top-left, the largest x+y is the bottom-right; the smallest y−x is the
-  /// top-right, the largest y−x is the bottom-left. This is stable regardless of
-  /// which engine produced the points.
+  /// Primary method — the standard sum/diff extremes: smallest x+y is top-left,
+  /// largest x+y is bottom-right; smallest y−x is top-right, largest y−x is
+  /// bottom-left. This is fast and unambiguous for near-upright documents.
+  ///
+  /// But it has a known failure mode: on a strongly-rotated quad (≳45°, e.g. a
+  /// diamond) two roles can resolve to the SAME physical point — the smallest
+  /// x+y and the smallest y−x collapse — yielding a degenerate quad with a
+  /// duplicated corner, which warps to garbage. When that happens we fall back
+  /// to an angular sort about the centroid, which always returns four distinct
+  /// corners for any (convex) input. The common case keeps the exact prior
+  /// behaviour; only the degenerate case is rescued.
   factory DocumentCorners.fromUnordered(
     List<ScanPoint> points, {
     double? confidence,
@@ -72,11 +79,62 @@ class DocumentCorners {
       return best;
     }
 
+    final tl = pick((p) => p.x + p.y, max: false);
+    final br = pick((p) => p.x + p.y, max: true);
+    final tr = pick((p) => p.y - p.x, max: false);
+    final bl = pick((p) => p.y - p.x, max: true);
+
+    // Degenerate if any two roles picked the same point (all four must be
+    // distinct for a valid quad). Fall back to the angular sort.
+    final distinct = <ScanPoint>{tl, tr, br, bl};
+    if (distinct.length < 4) {
+      return _orderByAngle(points, confidence: confidence);
+    }
+
     return DocumentCorners(
-      topLeft: pick((p) => p.x + p.y, max: false),
-      bottomRight: pick((p) => p.x + p.y, max: true),
-      topRight: pick((p) => p.y - p.x, max: false),
-      bottomLeft: pick((p) => p.y - p.x, max: true),
+      topLeft: tl,
+      bottomRight: br,
+      topRight: tr,
+      bottomLeft: bl,
+      confidence: confidence,
+    );
+  }
+
+  /// Orders four points TL/TR/BR/BL by their angle about the centroid — robust
+  /// for any convex quad, including diamonds the sum/diff method collapses.
+  ///
+  /// Sorts the points clockwise starting from the top, then rotates the ring so
+  /// it begins at the top-left (the top-most point, ties broken to the left).
+  static DocumentCorners _orderByAngle(
+    List<ScanPoint> points, {
+    double? confidence,
+  }) {
+    final cx = points.map((p) => p.x).reduce((a, b) => a + b) / 4;
+    final cy = points.map((p) => p.y).reduce((a, b) => a + b) / 4;
+
+    // Clockwise order in image space (y grows downward): sort by atan2 ascending.
+    final ring = [...points]
+      ..sort((a, b) =>
+          math.atan2(a.y - cy, a.x - cx).compareTo(
+            math.atan2(b.y - cy, b.x - cx)));
+
+    // Find the top-left anchor: smallest x+y among the four, then rotate the
+    // ring so it starts there and continues clockwise → TL, TR, BR, BL.
+    var start = 0;
+    var bestKey = double.infinity;
+    for (var i = 0; i < 4; i++) {
+      final key = ring[i].x + ring[i].y;
+      if (key < bestKey) {
+        bestKey = key;
+        start = i;
+      }
+    }
+
+    return DocumentCorners(
+      topLeft: ring[start],
+      topRight: ring[(start + 1) % 4],
+      bottomRight: ring[(start + 2) % 4],
+      bottomLeft: ring[(start + 3) % 4],
       confidence: confidence,
     );
   }
