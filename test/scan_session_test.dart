@@ -87,4 +87,41 @@ void main() {
     expect(p2.corners, isNotNull);
     expect(p2.document.width, 1); // document preserved
   });
+
+  group('value equality', () {
+    test('ScannedDocument compares by dimensions + byte content', () {
+      final a = ScannedDocument(
+        bytes: Uint8List.fromList([1, 2, 3]),
+        width: 10,
+        height: 20,
+      );
+      final b = ScannedDocument(
+        bytes: Uint8List.fromList([1, 2, 3]),
+        width: 10,
+        height: 20,
+      );
+      final c = ScannedDocument(
+        bytes: Uint8List.fromList([1, 2, 4]), // different last byte
+        width: 10,
+        height: 20,
+      );
+      expect(a, equals(b));
+      expect(a.hashCode, b.hashCode);
+      expect(a, isNot(equals(c)));
+    });
+
+    test('ScannedPage compares document + corners', () {
+      expect(page(1), equals(page(1)));
+      expect(page(1), isNot(equals(page(2))));
+    });
+
+    test('ScanSession compares pages in order', () {
+      final s1 = const ScanSession().add(page(1)).add(page(2));
+      final s2 = const ScanSession().add(page(1)).add(page(2));
+      final s3 = const ScanSession().add(page(2)).add(page(1)); // reordered
+      expect(s1, equals(s2));
+      expect(s1.hashCode, s2.hashCode);
+      expect(s1, isNot(equals(s3)));
+    });
+  });
 }

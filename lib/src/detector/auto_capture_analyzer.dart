@@ -40,6 +40,17 @@ class AutoCaptureState {
   String toString() =>
       'AutoCaptureState($status, steady:$steadyFrames'
       '${corners == null ? '' : ', conf:${corners!.confidence?.toStringAsFixed(2)}'})';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AutoCaptureState &&
+          other.status == status &&
+          other.corners == corners &&
+          other.steadyFrames == steadyFrames;
+
+  @override
+  int get hashCode => Object.hash(status, corners, steadyFrames);
 }
 
 /// Watches a stream of detected [DocumentCorners] and decides when a document

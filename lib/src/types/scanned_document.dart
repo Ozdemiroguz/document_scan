@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 /// The result of processing a document: a perspective-corrected, cropped, and
 /// optionally filtered image, returned as encoded bytes plus its dimensions.
@@ -26,4 +26,19 @@ class ScannedDocument {
 
   @override
   String toString() => 'ScannedDocument(${width}x$height, ${bytes.length} B)';
+
+  /// Value equality including the image bytes. Dimensions and byte length are
+  /// checked first (cheap), so unequal documents short-circuit before the
+  /// content compare; only two same-size documents pay for the full byte scan.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ScannedDocument &&
+          other.width == width &&
+          other.height == height &&
+          other.bytes.length == bytes.length &&
+          listEquals(other.bytes, bytes);
+
+  @override
+  int get hashCode => Object.hash(width, height, bytes.length);
 }

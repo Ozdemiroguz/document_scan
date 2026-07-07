@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../types/document_corners.dart';
 import '../types/scanned_document.dart';
 
@@ -22,6 +24,16 @@ class ScannedPage {
 
   @override
   String toString() => 'ScannedPage(${document.width}x${document.height})';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ScannedPage &&
+          other.document == document &&
+          other.corners == corners;
+
+  @override
+  int get hashCode => Object.hash(document, corners);
 }
 
 /// An immutable, framework-free collection of scanned [pages] in order.
@@ -90,4 +102,12 @@ class ScanSession {
 
   @override
   String toString() => 'ScanSession(${pages.length} pages)';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ScanSession && listEquals(other.pages, pages);
+
+  @override
+  int get hashCode => Object.hashAll(pages);
 }

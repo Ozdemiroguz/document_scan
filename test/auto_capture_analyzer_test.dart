@@ -160,4 +160,24 @@ void main() {
       expect(states.last.shouldCapture, isTrue);
     });
   });
+
+  group('AutoCaptureState value equality', () {
+    test('equal states compare equal', () {
+      const a = AutoCaptureState(
+        status: AutoCaptureStatus.detecting,
+        steadyFrames: 2,
+      );
+      const b = AutoCaptureState(
+        status: AutoCaptureStatus.detecting,
+        steadyFrames: 2,
+      );
+      const c = AutoCaptureState(
+        status: AutoCaptureStatus.ready,
+        steadyFrames: 2,
+      );
+      expect(a, equals(b));
+      expect(a.hashCode, b.hashCode);
+      expect(a, isNot(equals(c)));
+    });
+  });
 }
