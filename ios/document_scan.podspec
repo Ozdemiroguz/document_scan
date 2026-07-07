@@ -24,9 +24,8 @@ Composable, native-light document scanner: corner detection + perspective correc
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
   s.swift_version = '5.0'
 
-  # If your plugin requires a privacy manifest, for example if it uses any
-  # required reason APIs, update the PrivacyInfo.xcprivacy file to describe your
-  # plugin's privacy impact, and then uncomment this line. For more information,
-  # see https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
-  # s.resource_bundles = {'document_scan_privacy' => ['document_scan/Sources/document_scan/PrivacyInfo.xcprivacy']}
+  # Apple requires the plugin to bundle a privacy manifest. It declares no
+  # tracking, no collected data, and no required-reason API usage — accurate for
+  # a Vision-only detector that reads image files/frames and nothing else.
+  s.resource_bundles = {'document_scan_privacy' => ['document_scan/Sources/document_scan/PrivacyInfo.xcprivacy']}
 end

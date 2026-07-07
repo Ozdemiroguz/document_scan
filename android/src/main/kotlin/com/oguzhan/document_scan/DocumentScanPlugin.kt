@@ -65,6 +65,8 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
+        // Release the background thread so it doesn't outlive the engine.
+        executor.shutdown()
     }
 
     override fun onMethodCall(call: MethodCall, result: Result) {
@@ -165,10 +167,11 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
         val src = Mat()
         Utils.bitmapToMat(work, src)
         work.recycle()
-        val contours = findContours(src)
-        src.release()
-        if (contours.isEmpty()) return null
-        val quad = findBestQuad(contours) ?: return null
+        val quad = try {
+            detectBestQuad(src)
+        } finally {
+            src.release()
+        } ?: return null
         val ordered = orderCorners(quad)
         // Normalize to 0..1 of the ORIGINAL image.
         val w = origW.toDouble()
@@ -257,10 +260,11 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
 
         val fw = work.cols().toDouble()
         val fh = work.rows().toDouble()
-        val contours = findContours(work)
-        work.release()
-        if (contours.isEmpty()) return null
-        val quad = findBestQuad(contours) ?: return null
+        val quad = try {
+            detectBestQuad(work)
+        } finally {
+            work.release()
+        } ?: return null
         val o = orderCorners(quad)
         return mapOf(
             "topLeftX" to (o[0].x / fw).coerceIn(0.0, 1.0), "topLeftY" to (o[0].y / fh).coerceIn(0.0, 1.0),
@@ -288,45 +292,71 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
 
     // --- Proven OpenCV edge pipeline ---
 
-    private fun findContours(src: Mat): List<MatOfPoint> {
-        val size = Size(src.size().width, src.size().height)
-        val gray = Mat(size, CvType.CV_8UC4)
-        val canned = Mat(size, CvType.CV_8UC1)
+    /// Detects the best document quad in [src] and returns its four corner
+    /// points (in [src]'s pixel space), or null if none is found.
+    ///
+    /// This owns the ENTIRE OpenCV Mat lifecycle: every `Mat`/`MatOfPoint`
+    /// allocated here (the edge-pipeline working Mats, the contour list, and the
+    /// per-candidate approx Mats) is released before returning, on every path
+    /// including exceptions. Nothing native escapes to the caller — the caller
+    /// only owns the input [src]. Returning plain `Point`s (not Mats) is what
+    /// makes that guarantee possible: earlier this leaked a `List<MatOfPoint>`
+    /// every frame, which grew the native heap until OOM on a long scan.
+    private fun detectBestQuad(src: Mat): List<Point>? {
+        val gray = Mat()
+        val canned = Mat()
         val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(9.0, 9.0))
-        val dilated = Mat(size, CvType.CV_8UC1)
-
-        Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY)
-        Imgproc.GaussianBlur(gray, gray, Size(5.0, 5.0), 0.0)
-        Imgproc.threshold(gray, gray, 20.0, 255.0, Imgproc.THRESH_TRIANGLE)
-        Imgproc.Canny(gray, canned, 75.0, 200.0)
-        Imgproc.dilate(canned, dilated, kernel)
-
-        val contours = ArrayList<MatOfPoint>()
+        val dilated = Mat()
         val hierarchy = Mat()
-        Imgproc.findContours(dilated, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE)
+        val contours = ArrayList<MatOfPoint>()
+        try {
+            // The input may be 3-channel (BGR, from the YUV path) or 4-channel
+            // (RGBA, from bitmapToMat / the BGRA frame path). Pick the matching
+            // grayscale conversion by channel count so a 4-channel image doesn't
+            // hit BGR2GRAY's `scn == 3` assertion (which would throw and break
+            // the file/BGRA paths entirely).
+            val grayCode = if (src.channels() >= 4) {
+                Imgproc.COLOR_RGBA2GRAY
+            } else {
+                Imgproc.COLOR_BGR2GRAY
+            }
+            Imgproc.cvtColor(src, gray, grayCode)
+            Imgproc.GaussianBlur(gray, gray, Size(5.0, 5.0), 0.0)
+            Imgproc.threshold(gray, gray, 20.0, 255.0, Imgproc.THRESH_TRIANGLE)
+            Imgproc.Canny(gray, canned, 75.0, 200.0)
+            Imgproc.dilate(canned, dilated, kernel)
 
-        val filtered = contours
-            .filter { Imgproc.contourArea(it) > 100e2 }
-            .sortedByDescending { Imgproc.contourArea(it) }
-            .take(25)
+            Imgproc.findContours(
+                dilated, contours, hierarchy,
+                Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE,
+            )
 
-        hierarchy.release(); gray.release(); canned.release(); kernel.release(); dilated.release()
-        return filtered
-    }
+            val candidates = contours
+                .filter { Imgproc.contourArea(it) > 100e2 }
+                .sortedByDescending { Imgproc.contourArea(it) }
+                .take(5)
 
-    private fun findBestQuad(contours: List<MatOfPoint>): List<Point>? {
-        val limit = minOf(contours.size, 5)
-        for (i in 0 until limit) {
-            val c2f = MatOfPoint2f(*contours[i].toArray())
-            val peri = Imgproc.arcLength(c2f, true)
-            val approx = MatOfPoint2f()
-            Imgproc.approxPolyDP(c2f, approx, 0.03 * peri, true)
-            val pts = approx.toArray().toList()
-            val convex = MatOfPoint()
-            approx.convertTo(convex, CvType.CV_32S)
-            if (pts.size == 4 && Imgproc.isContourConvex(convex)) return pts
+            for (contour in candidates) {
+                val c2f = MatOfPoint2f(*contour.toArray())
+                val approx = MatOfPoint2f()
+                val convex = MatOfPoint()
+                try {
+                    val peri = Imgproc.arcLength(c2f, true)
+                    Imgproc.approxPolyDP(c2f, approx, 0.03 * peri, true)
+                    val pts = approx.toArray().toList()
+                    approx.convertTo(convex, CvType.CV_32S)
+                    if (pts.size == 4 && Imgproc.isContourConvex(convex)) return pts
+                } finally {
+                    c2f.release(); approx.release(); convex.release()
+                }
+            }
+            return null
+        } finally {
+            gray.release(); canned.release(); kernel.release()
+            dilated.release(); hierarchy.release()
+            // Release EVERY contour Mat, including the ones we didn't inspect.
+            for (contour in contours) contour.release()
         }
-        return null
     }
 
     private fun orderCorners(points: List<Point>): List<Point> {
@@ -353,7 +383,11 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
         val uvH = height / 2; val uvW = width / 2
         for (row in 0 until uvH) for (col in 0 until uvW) {
             val i = row * uvStride + col * uvPixel
-            nv21[pos++] = v[i]; nv21[pos++] = u[i]
+            // Guard against OEM plane layouts whose stride/pixelStride don't
+            // match the reported dims (e.g. a single interleaved U/V plane) —
+            // read a neutral 128 (gray chroma) rather than crashing out of range.
+            nv21[pos++] = if (i < v.size) v[i] else 128.toByte()
+            nv21[pos++] = if (i < u.size) u[i] else 128.toByte()
         }
         return nv21
     }
@@ -367,8 +401,21 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
     }
 
     private fun decodeBitmapWithOrientation(file: File): Bitmap? {
-        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return null
-        val orientation = ExifInterface(file.absolutePath)
+        val path = file.absolutePath
+        // Two-pass decode: read the bounds first and pick an inSampleSize so a
+        // huge gallery photo (12–108 MP) isn't decoded at full resolution into a
+        // multi-hundred-MB bitmap (OOM risk) when detection only needs ~2000px.
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = computeInSampleSize(
+                bounds.outWidth, bounds.outHeight, DETECTION_MAX_LONG_SIDE,
+            )
+        }
+        val bitmap = BitmapFactory.decodeFile(path, opts) ?: return null
+
+        val orientation = ExifInterface(path)
             .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
         val m = Matrix()
         when (orientation) {
@@ -378,8 +425,22 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
             ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> m.preScale(-1f, 1f)
             ExifInterface.ORIENTATION_FLIP_VERTICAL -> m.preScale(1f, -1f)
         }
-        return if (m.isIdentity) bitmap
-        else Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, m, true)
+        if (m.isIdentity) return bitmap
+        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, m, true)
+        // createBitmap returns a new bitmap; free the pre-rotation source.
+        if (rotated != bitmap) bitmap.recycle()
+        return rotated
+    }
+
+    /// Largest power-of-two subsample that keeps the long side >= [maxLongSide].
+    private fun computeInSampleSize(w: Int, h: Int, maxLongSide: Int): Int {
+        var sample = 1
+        var longSide = maxOf(w, h)
+        while (longSide / 2 >= maxLongSide) {
+            longSide /= 2
+            sample *= 2
+        }
+        return sample
     }
 
     private fun isEmulator(): Boolean {
