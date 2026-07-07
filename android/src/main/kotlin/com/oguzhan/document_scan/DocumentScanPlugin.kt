@@ -139,7 +139,18 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
         val origW = bitmap.width
         val origH = bitmap.height
 
-        val maxDim = 1000
+        // Detect at the SAME long-side cap as the camera-frame path
+        // (DETECTION_MAX_LONG_SIDE). The edge pipeline in findContours uses
+        // absolute-pixel operations — Canny thresholds, a fixed 9x9 dilate
+        // kernel, and a 10000px^2 min-contour-area filter — so the input
+        // resolution changes what counts as a document. Running the file path
+        // at 1000px while frames run at 720px meant the same document could be
+        // found from the gallery but missed live (or vice versa) — a
+        // gallery/camera parity break. Matching the caps makes those absolute
+        // thresholds act identically on both paths (and speeds up the file
+        // path). Corners are normalized to the original dims below, so the cap
+        // never affects output coordinates.
+        val maxDim = DETECTION_MAX_LONG_SIDE
         val scale: Double
         val work: Bitmap
         if (origW > maxDim || origH > maxDim) {
@@ -198,8 +209,8 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
         // out normalized, so the source scale doesn't change the result — this
         // is the main lever for per-frame Large-Object-Space GC pressure.
         val longSide = maxOf(width, height)
-        if (longSide > FRAME_MAX_LONG_SIDE) {
-            val scale = FRAME_MAX_LONG_SIDE.toDouble() / longSide
+        if (longSide > DETECTION_MAX_LONG_SIDE) {
+            val scale = DETECTION_MAX_LONG_SIDE.toDouble() / longSide
             val small = Mat()
             Imgproc.resize(
                 bgr, small,
@@ -241,7 +252,7 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
         // YUV path arrives pre-scaled (see detectFromYuv), so this is a no-op
         // there; it's the safety net for the BGRA/emulator paths, which hand in
         // a full-res Mat. Corners are normalized, so the cap doesn't shift them.
-        val work = downscaleMat(rotated, FRAME_MAX_LONG_SIDE)
+        val work = downscaleMat(rotated, DETECTION_MAX_LONG_SIDE)
         if (work != rotated) rotated.release()
 
         val fw = work.cols().toDouble()
@@ -389,9 +400,12 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
         private const val TAG = "DocumentScan"
         private const val CHANNEL = "com.oguzhan.document_scan/detector"
 
-        // Cap the long side of a realtime frame before the edge pipeline runs.
-        // Document edges are easily found at 720px, and the per-frame Mat/buffer
-        // and detection cost both shrink from 1080p.
-        private const val FRAME_MAX_LONG_SIDE = 720
+        // Cap the long side before the edge pipeline runs — for BOTH the file
+        // and the realtime-frame path, so the absolute-pixel Canny/dilate/area
+        // thresholds in findContours act on the same resolution and the two
+        // paths agree on what's a document (gallery/camera parity). Document
+        // edges are easily found at 720px, and the per-frame Mat/buffer and
+        // detection cost both shrink from 1080p.
+        private const val DETECTION_MAX_LONG_SIDE = 720
     }
 }
