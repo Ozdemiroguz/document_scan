@@ -85,10 +85,42 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
       _busy = false;
       _status = pdf == null
           ? 'Nothing to export.'
-          : '✅ ${_session.length}-page PDF ready — '
-                '${(pdf.bytes.length / 1024).toStringAsFixed(0)} KB. '
-                '(A real app would save or share pdf.bytes.)';
+          : '${_session.length} page(s) ready to export.';
     });
+
+    if (pdf == null) return;
+    final pageCount = _session.length;
+    final kb = (pdf.bytes.length / 1024).toStringAsFixed(0);
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.picture_as_pdf, size: 40, color: Colors.teal),
+        title: const Text('PDF ready'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '$pageCount page${pageCount == 1 ? '' : 's'} · $kb KB',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'pagesToPdf returned the PDF as bytes. From here a real app would '
+              'save it (path_provider), share it (share_plus), or preview/print '
+              'it (printing) — this demo stays dependency-light and stops at the '
+              'bytes.',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
