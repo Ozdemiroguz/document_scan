@@ -26,12 +26,36 @@ into a clean scan.
 - 📐 **Detects documents, not text.** A page is found by its rectangle, so blank
   pages, drawings, and forms work too.
 
+> **Own the camera UX. Keep the scan engine.**
+> Not a fullscreen scanner plugin — a document scan engine you drive from your
+> own UI.
+
 <!-- SHOT 1 · HERO — realtime detection (animated .webp). RECORD: camera on an
      A4 page, dark plain surface; the green quad tracks the document as you move.
      4–6 s. When ready, host at doc/realtime.webp and swap the src below. -->
 <p align="center">
   <img src="https://placehold.co/280x580/1e293b/1DE9B6/webp?text=SHOT+1%0ARealtime%0Adetection%0A%28webp%29" width="280" alt="Realtime document detection (placeholder)">
 </p>
+
+## 🤔 Why this exists
+
+Most Flutter document scanners are either locked to a native fullscreen flow
+you can't restyle, or a rigid black box that doesn't fit a custom product UX.
+`document_scan` gives you the scan pipeline as **data-first APIs** — corners and
+pixels — so the camera UI, the overlay, the capture button, and the review
+screen are all yours to build.
+
+**It is** a detection + perspective-correction + filtering pipeline.
+**It is not** a fullscreen scanner UI, an OCR engine, or a camera package —
+bring your own camera and feed it frames or files.
+
+## 💡 Best for
+
+- Custom banking / KYC capture flows
+- Receipt and invoice scanning
+- Form and document capture
+- Apps with their own embedded camera UX
+- Gallery-import + manual-correction workflows
 
 ## 🔧 How it works
 
@@ -122,7 +146,17 @@ final scan = await scanner.scan(input, corners: editedCorners);
 
 `DocumentScanner` is a thin tie between two independent pieces you can use on
 their own — a `DocumentDetector` (finds corners) and a `DocumentProcessor`
-(warps + filters):
+(warps + filters).
+
+**Which API should I use?**
+
+| Goal | Use |
+| --- | --- |
+| Quickest path — detect + crop in one call | `DocumentScanner` |
+| Just find the corners (draw them, confirm, adjust) | `DocumentDetector` |
+| Crop/filter with corners you already have | `DocumentProcessor` |
+| Watch a live camera stream for documents | `DocumentDetector.detectStream` |
+| Decide when a held document is steady enough to shoot | `AutoCaptureAnalyzer` |
 
 ```dart
 final detector = DocumentDetector();
