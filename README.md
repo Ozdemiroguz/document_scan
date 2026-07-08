@@ -26,14 +26,12 @@ into a clean scan.
 - 📐 **Detects documents, not text.** A page is found by its rectangle, so blank
   pages, drawings, and forms work too.
 
-<!-- ────────────────────────────────────────────────────────────────────────
-     SHOT 1 · HERO — realtime detection (animated .webp)
-     WHAT TO RECORD: point the camera at an A4 page on a dark, plain surface;
-     the green quad overlay should track/lock onto the document as you move
-     slightly. 4–6 s. This is the most important visual — it proves it works.
-     Host it at doc/realtime.webp in the repo, then uncomment:
--->
-<!-- <p align="center"><img src="https://raw.githubusercontent.com/Ozdemiroguz/document_scan/main/doc/realtime.webp" width="280" alt="Realtime document detection"></p> -->
+<!-- SHOT 1 · HERO — realtime detection (animated .webp). RECORD: camera on an
+     A4 page, dark plain surface; the green quad tracks the document as you move.
+     4–6 s. When ready, host at doc/realtime.webp and swap the src below. -->
+<p align="center">
+  <img src="https://placehold.co/280x580/1e293b/1DE9B6/webp?text=SHOT+1%0ARealtime%0Adetection%0A%28webp%29" width="280" alt="Realtime document detection (placeholder)">
+</p>
 
 ## 🔧 How it works
 
@@ -68,13 +66,11 @@ dependencies:
 
 ## 🖼️ Scan a still image
 
-<!-- ────────────────────────────────────────────────────────────────────────
-     SHOT 2 · Gallery scan (animated .webp)
-     WHAT TO RECORD: the example's "Gallery scan" screen — pick an A4 page, and
-     show the clean cropped result appear; optionally flick the filter dropdown
-     so a couple of looks swap live. 3–5 s. Host at doc/gallery.webp, uncomment:
--->
-<!-- <p align="center"><img src="https://raw.githubusercontent.com/Ozdemiroguz/document_scan/main/doc/gallery.webp" width="260" alt="Gallery scan"></p> -->
+<!-- SHOT 2 · Gallery scan (animated .webp). RECORD: pick an A4 page, show the
+     cropped result appear; flick the filter dropdown. 3–5 s. Swap src when ready. -->
+<p align="center">
+  <img src="https://placehold.co/260x540/1e293b/1DE9B6/webp?text=SHOT+2%0AGallery%0Ascan%0A%28webp%29" width="260" alt="Gallery scan (placeholder)">
+</p>
 
 The one-call path — `DocumentScanner` detects the corners and returns a clean,
 upright scan:
@@ -110,14 +106,12 @@ Pass them and detection is skipped:
 final scan = await scanner.scan(input, corners: editedCorners);
 ```
 
-<!-- ────────────────────────────────────────────────────────────────────────
-     SHOT 3 · Manual corner edit (animated .webp)
-     WHAT TO RECORD: the "Manual corner edit" screen with a BUSINESS CARD or ID
-     — drag one or two of the green corner handles to correct the quad, then
-     tap Crop to show the result. 4–6 s. The drag is the point. Host at
-     doc/manual.webp, then uncomment:
--->
-<!-- <p align="center"><img src="https://raw.githubusercontent.com/Ozdemiroguz/document_scan/main/doc/manual.webp" width="260" alt="Manual corner adjustment"></p> -->
+<!-- SHOT 3 · Manual corner edit (animated .webp). RECORD: a business card / ID —
+     drag the green corner handles to correct the quad, then Crop. 4–6 s. The
+     drag is the point. Swap src when ready. -->
+<p align="center">
+  <img src="https://placehold.co/260x540/1e293b/1DE9B6/webp?text=SHOT+3%0AManual%0Acorner+edit%0A%28webp%29" width="260" alt="Manual corner adjustment (placeholder)">
+</p>
 
 > **Stays off the UI thread.** The warp is pure-Dart CPU work (≈1s on a
 > full-frame photo), so `scan` runs it on a background isolate by default — you
@@ -282,13 +276,12 @@ final pdf = await const DocumentProcessor()
 // pdf!.bytes — a single multi-page PDF, one A4 page per scan.
 ```
 
-<!-- ────────────────────────────────────────────────────────────────────────
-     SHOT 4 · Multi-page session (animated .webp)
-     WHAT TO RECORD: the "Multi-page session" screen — add a couple of pages so
-     thumbnails appear, drag one to reorder, then tap "Export PDF" to show the
-     PDF-ready dialog. 5–7 s. Host at doc/multipage.webp, then uncomment:
--->
-<!-- <p align="center"><img src="https://raw.githubusercontent.com/Ozdemiroguz/document_scan/main/doc/multipage.webp" width="260" alt="Multi-page session"></p> -->
+<!-- SHOT 4 · Multi-page session (animated .webp). RECORD: add a couple of pages,
+     drag one to reorder, tap "Export PDF" to show the PDF-ready dialog. 5–7 s.
+     Swap src when ready. -->
+<p align="center">
+  <img src="https://placehold.co/260x540/1e293b/1DE9B6/webp?text=SHOT+4%0AMulti-page%0Asession%0A%28webp%29" width="260" alt="Multi-page session (placeholder)">
+</p>
 
 ## 📤 What you get back
 
