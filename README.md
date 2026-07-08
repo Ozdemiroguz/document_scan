@@ -49,6 +49,26 @@ screen are all yours to build.
 **It is not** a fullscreen scanner UI, an OCR engine, or a camera package —
 bring your own camera and feed it frames or files.
 
+### How it compares
+
+Most Flutter document scanners fall into two camps. Neither lets you own the UI
+while staying offline:
+
+| | Fullscreen plugins | ML Kit / VisionKit wrappers | **document_scan** |
+| --- | :---: | :---: | :---: |
+| Build your own UI (headless) | ❌ | ❌ | ✅ |
+| Works fully offline (no Play Services) | ⚠️ varies | ❌ downloads at runtime | ✅ |
+| Realtime live-frame detection | some | ❌ still capture only | ✅ |
+| Composable detector + processor | ❌ | ❌ | ✅ |
+| Returns data (corners + bytes), not a screen | ❌ file paths | ❌ file paths | ✅ |
+| Manual corner adjustment | ⚠️ | ❌ | ✅ |
+
+The ML-Kit-based wrappers download their models and scanning UI through Google
+Play Services at first run — great for a drop-in screen, but not offline, not
+customizable, and (for the document scanner) Android-only. The fullscreen
+plugins render their own UI and hand back cropped file paths, not geometry.
+`document_scan` gives you the geometry and pixels and gets out of your way.
+
 ## 💡 Best for
 
 - Custom banking / KYC capture flows
