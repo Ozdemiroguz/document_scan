@@ -69,12 +69,12 @@ dependencies:
 ## 🖼️ Scan a still image
 
 <!-- ────────────────────────────────────────────────────────────────────────
-     SHOT 2 · Gallery scan result (static .png)
-     WHAT TO CAPTURE: the example's "Gallery scan" screen after picking an A4
-     page — showing the clean, cropped, upright result (with a filter applied).
-     Host at doc/gallery.png, then uncomment:
+     SHOT 2 · Gallery scan (animated .webp)
+     WHAT TO RECORD: the example's "Gallery scan" screen — pick an A4 page, and
+     show the clean cropped result appear; optionally flick the filter dropdown
+     so a couple of looks swap live. 3–5 s. Host at doc/gallery.webp, uncomment:
 -->
-<!-- <p align="center"><img src="https://raw.githubusercontent.com/Ozdemiroguz/document_scan/main/doc/gallery.png" width="260" alt="Gallery scan result"></p> -->
+<!-- <p align="center"><img src="https://raw.githubusercontent.com/Ozdemiroguz/document_scan/main/doc/gallery.webp" width="260" alt="Gallery scan"></p> -->
 
 The one-call path — `DocumentScanner` detects the corners and returns a clean,
 upright scan:
@@ -111,13 +111,13 @@ final scan = await scanner.scan(input, corners: editedCorners);
 ```
 
 <!-- ────────────────────────────────────────────────────────────────────────
-     SHOT 3 · Manual corner edit (static .png)
-     WHAT TO CAPTURE: the example's "Manual corner edit" screen with a BUSINESS
-     CARD or ID (small doc) — the four green corner handles visible over the
-     image, mid-adjust. Shows the drag-to-correct flow.
-     Host at doc/manual.png, then uncomment:
+     SHOT 3 · Manual corner edit (animated .webp)
+     WHAT TO RECORD: the "Manual corner edit" screen with a BUSINESS CARD or ID
+     — drag one or two of the green corner handles to correct the quad, then
+     tap Crop to show the result. 4–6 s. The drag is the point. Host at
+     doc/manual.webp, then uncomment:
 -->
-<!-- <p align="center"><img src="https://raw.githubusercontent.com/Ozdemiroguz/document_scan/main/doc/manual.png" width="260" alt="Manual corner adjustment"></p> -->
+<!-- <p align="center"><img src="https://raw.githubusercontent.com/Ozdemiroguz/document_scan/main/doc/manual.webp" width="260" alt="Manual corner adjustment"></p> -->
 
 > **Stays off the UI thread.** The warp is pure-Dart CPU work (≈1s on a
 > full-frame photo), so `scan` runs it on a background isolate by default — you
@@ -283,12 +283,12 @@ final pdf = await const DocumentProcessor()
 ```
 
 <!-- ────────────────────────────────────────────────────────────────────────
-     SHOT 4 · Multi-page session (static .png)
-     WHAT TO CAPTURE: the example's "Multi-page session" screen with 2–3 page
-     thumbnails in the list + the "Export PDF (N)" button. Shows the multi-page
-     workflow. Host at doc/multipage.png, then uncomment:
+     SHOT 4 · Multi-page session (animated .webp)
+     WHAT TO RECORD: the "Multi-page session" screen — add a couple of pages so
+     thumbnails appear, drag one to reorder, then tap "Export PDF" to show the
+     PDF-ready dialog. 5–7 s. Host at doc/multipage.webp, then uncomment:
 -->
-<!-- <p align="center"><img src="https://raw.githubusercontent.com/Ozdemiroguz/document_scan/main/doc/multipage.png" width="260" alt="Multi-page session"></p> -->
+<!-- <p align="center"><img src="https://raw.githubusercontent.com/Ozdemiroguz/document_scan/main/doc/multipage.webp" width="260" alt="Multi-page session"></p> -->
 
 ## 📤 What you get back
 
