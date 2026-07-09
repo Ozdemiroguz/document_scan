@@ -34,6 +34,14 @@ dependencies:
   # frames from whatever capture pipeline you like; here we use the camera plugin.
   camera: ^0.12.0+1
 
+  # Demo-only: to actually *do something* with the exported PDF/scan bytes — write
+  # them to a temp file (path_provider) and open the system share sheet
+  # (share_plus) so you can save/preview/send the result. The package itself
+  # returns bytes and takes no opinion on where they go; this is the example
+  # showing one way to hand them off.
+  path_provider: ^2.1.4
+  share_plus: ^10.1.2
+
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8

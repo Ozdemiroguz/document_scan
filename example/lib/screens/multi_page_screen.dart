@@ -1,8 +1,13 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:document_scan/document_scan.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+
+import 'scan_result_screen.dart';
 
 /// Demonstrates a multi-page scan: collect several scans in a [ScanSession],
 /// reorder / remove them, then export the whole thing as one PDF with
@@ -23,6 +28,12 @@ class MultiPageScreen extends StatefulWidget {
 class _MultiPageScreenState extends State<MultiPageScreen> {
   final _scanner = DocumentScanner();
   static const _processor = DocumentProcessor();
+
+  // Anchors the iOS share sheet popover. On iPad (and some iOS versions) the
+  // share sheet must originate from a non-zero on-screen rect, or it throws
+  // "sharePositionOrigin: argument must be set" — so we point it at the Export
+  // button's frame.
+  final _exportButtonKey = GlobalKey();
 
   // The immutable multi-page container. Each mutation returns a new session.
   ScanSession _session = const ScanSession();
@@ -81,45 +92,77 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
     ]);
 
     if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _status = pdf == null
-          ? 'Nothing to export.'
-          : '${_session.length} page(s) ready to export.';
-    });
 
-    if (pdf == null) return;
-    final pageCount = _session.length;
-    final kb = (pdf.bytes.length / 1024).toStringAsFixed(0);
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        icon: const Icon(Icons.picture_as_pdf, size: 40, color: Colors.teal),
-        title: const Text('PDF ready'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '$pageCount page${pageCount == 1 ? '' : 's'} · $kb KB',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'pagesToPdf returned the PDF as bytes. From here a real app would '
-              'save it (path_provider), share it (share_plus), or preview/print '
-              'it (printing) — this demo stays dependency-light and stops at the '
-              'bytes.',
+    if (pdf == null) {
+      setState(() {
+        _busy = false;
+        _status = 'Nothing to export.';
+      });
+      return;
+    }
+
+    // pagesToPdf returns the PDF as bytes. To actually hand them off, write them
+    // to a temp file and open the system share sheet — from there you can save
+    // to Files, preview, or send it. (A real app might use path_provider +
+    // share_plus exactly like this, or the `printing` package to preview/print.)
+    try {
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/scan.pdf');
+      await file.writeAsBytes(pdf.bytes, flush: true);
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _status = '${_session.length} page(s) exported.';
+      });
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/pdf')],
+        subject: 'Scanned document',
+        text: 'Scanned document (${_session.length} page(s))',
+        // Required for the iOS/iPad share-sheet popover — the rect it points at.
+        sharePositionOrigin: _shareOrigin(),
+      );
+    } catch (e, st) {
+      if (!mounted) return;
+      // Show the full error in a persistent, readable dialog (a SnackBar
+      // vanishes too fast to read). The type + message tell us what failed —
+      // MissingPluginException, a PlatformException, a file error, etc.
+      final detail = 'Type: ${e.runtimeType}\n\n$e\n\n${st.toString().split('\n').take(4).join('\n')}';
+      setState(() {
+        _busy = false;
+        _status = 'Export failed: ${e.runtimeType}';
+      });
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Export failed'),
+          content: SingleChildScrollView(
+            child: SelectableText(detail),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
+      );
+    }
+  }
+
+  /// The on-screen rect the iOS share-sheet popover points at — the Export
+  /// button's frame. Falls back to the screen centre if the button isn't laid
+  /// out (so the share never throws for a missing origin).
+  Rect _shareOrigin() {
+    final box = _exportButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null && box.hasSize) {
+      final topLeft = box.localToGlobal(Offset.zero);
+      return topLeft & box.size;
+    }
+    final size = MediaQuery.sizeOf(context);
+    return Rect.fromCenter(
+      center: Offset(size.width / 2, size.height / 2),
+      width: 1,
+      height: 1,
     );
   }
 
@@ -149,6 +192,7 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton.icon(
+                      key: _exportButtonKey,
                       onPressed: (_busy || _session.isEmpty)
                           ? null
                           : _exportPdf,
@@ -192,6 +236,15 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
             leading: _Thumb(page.document.bytes),
             title: Text('Page ${i + 1}'),
             subtitle: Text('${page.document.width}×${page.document.height}'),
+            // Tap a page to see it full-size (pinch-zoom to inspect the scan).
+            onTap: _busy
+                ? null
+                : () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          ScanResultScreen(document: page.document),
+                    ),
+                  ),
             trailing: IconButton(
               icon: const Icon(Icons.delete_outline),
               onPressed: _busy

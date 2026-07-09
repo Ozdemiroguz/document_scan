@@ -1,19 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import 'screens/camera_capture_screen.dart';
 import 'screens/gallery_scan_screen.dart';
 import 'screens/manual_edit_screen.dart';
 import 'screens/multi_page_screen.dart';
 import 'screens/realtime_scan_screen.dart';
 import 'screens/reprocess_screen.dart';
 
-void main() => runApp(const DocumentScanExampleApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Lock to portrait: the realtime overlay maps corners onto an upright preview,
+  // and a landscape rotation would misalign it — keeping it portrait also makes
+  // the demo consistent to record.
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  runApp(const DocumentScanExampleApp());
+}
 
 /// A multi-flow tour of the `document_scan` package. Each menu entry opens a
 /// self-contained screen that exercises a different slice of the API:
 ///
 /// * **Gallery scan** — the one-call [DocumentScanner.scan] façade.
+/// * **Camera capture** — frame a document in a live preview, tap the shutter,
+///   and scan the full-resolution still with the same one call.
 /// * **Realtime overlay** — [DocumentDetector.detectStream] with corner
-///   stabilization + an [AutoCaptureAnalyzer], drawn over a live camera preview.
+///   stabilization + an [AutoCaptureAnalyzer], drawn over a live camera preview;
+///   on auto-capture it grabs a still, scans it, and shows the result.
 /// * **Manual corner edit** — detect, drag-adjust the quad, then crop with the
 ///   user's corners.
 /// * **Reprocess with filter** — detect+crop once, then re-filter the same scan
@@ -46,6 +58,14 @@ class HomeScreen extends StatelessWidget {
         subtitle: 'One call: pick a photo → DocumentScanner.scan → clean scan.',
         icon: Icons.photo_library_outlined,
         builder: GalleryScanScreen.new,
+      ),
+      const _Demo(
+        title: 'Camera capture',
+        subtitle:
+            'Frame a document in the camera → shutter → DocumentScanner.scan → '
+            'view the result.',
+        icon: Icons.camera_alt_outlined,
+        builder: CameraCaptureScreen.new,
       ),
       const _Demo(
         title: 'Realtime overlay',

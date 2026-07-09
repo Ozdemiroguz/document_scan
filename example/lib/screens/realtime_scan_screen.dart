@@ -5,6 +5,8 @@ import 'package:camera/camera.dart';
 import 'package:document_scan/document_scan.dart';
 import 'package:flutter/material.dart';
 
+import 'scan_result_screen.dart';
+
 /// Demonstrates realtime detection over a live camera stream.
 ///
 /// The package never owns the camera — this screen drives the `camera` plugin,
@@ -39,7 +41,13 @@ class RealtimeScanScreen extends StatefulWidget {
 class _RealtimeScanScreenState extends State<RealtimeScanScreen>
     with WidgetsBindingObserver {
   final _detector = DocumentDetector();
+  final _scanner = DocumentScanner();
   final _analyzer = AutoCaptureAnalyzer();
+
+  // True from the moment auto-capture fires until we've taken the still and
+  // navigated to the result — guards against firing twice and against feeding
+  // more frames while the stream is being torn down for the capture.
+  bool _capturing = false;
 
   CameraController? _controller;
   // Frames flow into this controller; detectStream listens on its stream.
@@ -54,10 +62,18 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
 
   DocumentCorners? _corners; // smoothed corners for the overlay
   AutoCaptureStatus _capture = AutoCaptureStatus.searching;
-  bool _flashCaptured = false;
+  // When on, the screen auto-captures once the document is held steady. When
+  // off, detection + the overlay keep running but the user taps the shutter to
+  // capture — useful when you want to frame deliberately.
+  bool _autoCapture = true;
   String? _error;
   String _hint = 'Starting camera…';
   bool _ready = false;
+  // Aspect ratio (width / height) of the frame we actually run detection on,
+  // in the UPRIGHT space the overlay is drawn in — captured from the first
+  // frame. The preview box uses exactly this so what you see matches what the
+  // detector sees, and the overlay lines up pixel-for-pixel.
+  double? _detectAspect;
   // Set synchronously at the top of _start() (before any await) so two rapid
   // resume events can't both build a controller and leak the first.
   bool _starting = false;
@@ -108,26 +124,7 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
         return;
       }
 
-      final frames = StreamController<ScanInput>();
-      _frames = frames;
-
-      // Feed detected corners through the stabilizer so the overlay doesn't
-      // jitter frame-to-frame.
-      _detectionSub = _detector
-          .detectStream(frames.stream, stabilize: CornerStabilizer())
-          .listen(_onEvent);
-
-      // sensorOrientation is the clockwise rotation (degrees) to bring the
-      // frame upright. On Android (YUV420) the native side needs it; on iOS the
-      // BGRA path is already preview-oriented, so 0 is correct there.
-      final rotation = Platform.isIOS ? 0 : back.sensorOrientation;
-
-      await controller.startImageStream((image) {
-        // Drop frames while the controller/stream is torn down.
-        if (!mounted || frames.isClosed) return;
-        final input = _toScanInput(image, rotation);
-        if (input != null) frames.add(input);
-      });
+      await _resumeStream(controller);
 
       if (!mounted) return;
       setState(() {
@@ -195,14 +192,19 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
     // Feed the raw event to the analyzer so it preserves the DetectionSkipped /
     // DetectionError distinction (a dropped frame holds the countdown; a lost
     // document or error resets it) — instead of flattening to corners first.
+    // Ignore events once a capture is in flight — the stream is being torn down
+    // and we don't want a second frame to re-trigger the analyzer.
+    if (_capturing) return;
+
     final capture = _analyzer.addEvent(event);
     _capture = capture.status;
-    if (capture.shouldCapture && !_flashCaptured) {
-      _flashCaptured = true;
-      // A real app would grab a full-res still + crop here. We just flash.
-      Future<void>.delayed(const Duration(milliseconds: 900), () {
-        if (mounted) setState(() => _flashCaptured = false);
-      });
+    if (capture.shouldCapture && _autoCapture) {
+      // Auto-capture is on and the document has been held steady long enough:
+      // grab a full-resolution still, run the one-call scan on it, and show the
+      // result. This is the real end of the realtime flow — not just a flash.
+      _capture = AutoCaptureStatus.ready;
+      unawaited(_captureStill());
+      return;
     }
 
     // Drive the overlay + hint text off the same event.
@@ -223,6 +225,117 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
         break; // normal backpressure under load — ignore
       case DetectionError(:final error):
         setState(() => _error = 'Detection error: $error');
+    }
+  }
+
+  /// Builds the frame → detectStream pipeline and starts the camera's image
+  /// stream. Shared by first start and the post-capture restart so both wire the
+  /// throttle + stabilizer identically.
+  Future<void> _resumeStream(CameraController controller) async {
+    final frames = StreamController<ScanInput>();
+    _frames = frames;
+
+    // Feed detected corners through the stabilizer so the overlay doesn't
+    // jitter frame-to-frame. Cap detection at ~10/second: the camera pushes
+    // frames far faster than that, but running native detection on every one
+    // just heats the device without making the overlay look smoother —
+    // detectStream drops the frames in between for us.
+    _detectionSub = _detector
+        .detectStream(
+          frames.stream,
+          stabilize: CornerStabilizer(),
+          minInterval: const Duration(milliseconds: 100),
+        )
+        .listen(_onEvent);
+
+    // sensorOrientation is the clockwise rotation (degrees) to bring the frame
+    // upright. On Android (YUV420) the native side needs it; on iOS the BGRA
+    // path is already preview-oriented, so 0 is correct there.
+    final rotation = Platform.isIOS ? 0 : controller.description.sensorOrientation;
+
+    await controller.startImageStream((image) {
+      // Drop frames while the controller/stream is torn down.
+      if (!mounted || frames.isClosed) return;
+      // On the first frame, record the detection aspect in upright space so the
+      // preview box matches the pixels the detector actually sees. A 90°/270°
+      // rotation swaps width/height.
+      if (_detectAspect == null) {
+        final upright = rotation == 90 || rotation == 270;
+        final w = (upright ? image.height : image.width).toDouble();
+        final h = (upright ? image.width : image.height).toDouble();
+        if (h > 0) setState(() => _detectAspect = w / h);
+      }
+      final input = _toScanInput(image, rotation);
+      if (input != null) frames.add(input);
+    });
+  }
+
+  /// Auto-capture fired: take a full-resolution still and run the one-call scan
+  /// on it, then show the result. A still can't be grabbed while the image
+  /// stream is running, so we stop the stream first, capture, scan, and restart
+  /// the stream when the user comes back to scan again.
+  Future<void> _captureStill() async {
+    final controller = _controller;
+    if (_capturing || controller == null) return;
+    _capturing = true;
+    setState(() {
+      _corners = null;
+      _hint = 'Captured — scanning…';
+    });
+    try {
+      // The image stream and takePicture() can't run at once — stop the stream
+      // and tear down the detection pipeline listening on it (but keep the
+      // controller alive; we need it for the still). _resumeStream builds a
+      // fresh pipeline on restart.
+      await _detectionSub?.cancel();
+      _detectionSub = null;
+      await _frames?.close();
+      _frames = null;
+      if (controller.value.isStreamingImages) {
+        await controller.stopImageStream();
+      }
+      final photo = await controller.takePicture();
+      final scan = await _scanner.scan(ScanInput.file(photo.path));
+
+      if (!mounted) return;
+      if (scan == null) {
+        // The realtime overlay locked on, but the higher-res still didn't yield
+        // a crop — restart scanning rather than dead-ending.
+        _hint = 'Could not scan that — try again.';
+        await _restartAfterCapture();
+        return;
+      }
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ScanResultScreen(document: scan),
+        ),
+      );
+      // Back from the result — restart the live stream to scan another.
+      await _restartAfterCapture();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Capture failed: $e');
+      await _restartAfterCapture();
+    }
+  }
+
+  /// Resets the capture guard + analyzer and brings the live detection stream
+  /// back up so the screen is ready for the next document.
+  Future<void> _restartAfterCapture() async {
+    _analyzer.reset();
+    _capturing = false;
+    if (!mounted) return;
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    // Rebuild the frame → detectStream pipeline the same way _start does.
+    if (!controller.value.isStreamingImages) {
+      await _resumeStream(controller);
+    }
+    if (mounted) {
+      setState(() {
+        _capture = AutoCaptureStatus.searching;
+        _hint = 'Point the camera at a document.';
+      });
     }
   }
 
@@ -269,7 +382,29 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Realtime overlay')),
+      appBar: AppBar(
+        title: const Text('Realtime overlay'),
+        actions: [
+          // Auto-capture toggle: on = grab automatically once steady, off =
+          // wait for the shutter. Kept in the bar so it's reachable while the
+          // camera fills the body.
+          Row(
+            children: [
+              const Text('Auto'),
+              Switch(
+                value: _autoCapture,
+                onChanged: _capturing
+                    ? null
+                    : (v) => setState(() {
+                        _autoCapture = v;
+                        _analyzer.reset();
+                        _capture = AutoCaptureStatus.searching;
+                      }),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: _buildBody(context),
     );
   }
@@ -297,49 +432,79 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
     // above the home indicator / nav bar using the device's bottom inset.
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
-    return Stack(
-      fit: StackFit.expand,
+    // Two stacked regions: the camera preview on top (with the status chip and
+    // the capture flash over it — the only things that overlap the camera), and
+    // a separate text area below it so the hint/caveat never sit on the image.
+    return Column(
       children: [
-        // The preview and overlay share the same box, so normalized corners map
-        // straight onto the preview.
-        CameraPreview(
-          controller,
-          child: LayoutBuilder(
-            builder: (context, _) => CustomPaint(
-              painter: _DocumentOverlayPainter(_corners),
-              size: Size.infinite,
-            ),
+        // Camera area — full width at the DETECTION frame's own aspect ratio, so
+        // there are NO black letterbox bands (the box exactly matches the image)
+        // and the overlay lines up pixel-for-pixel. Capped to ~62% of the screen
+        // height so it stays compact and leaves room for the text area below.
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.62,
           ),
-        ),
-        Positioned(
-          top: 16,
-          left: 16,
-          right: 16,
-          child: _CaptureChip(status: _capture),
-        ),
-        Positioned(
-          bottom: 24 + bottomInset,
-          left: 16,
-          right: 16,
-          child: Column(
+          child: Stack(
+            alignment: Alignment.topCenter,
             children: [
-              if (_error != null)
-                _Banner(_error!, color: Colors.red.shade700)
-              else
-                _Banner(_hint, color: Colors.black54),
-              const SizedBox(height: 8),
-              _Banner(
-                'Demo: overlay-to-preview alignment is simplified — the quad may '
-                'sit rotated on some devices. Detection itself is real.',
-                color: Colors.black45,
+              AspectRatio(
+                aspectRatio:
+                    _detectAspect ?? (1 / controller.value.aspectRatio),
+                child: CameraPreview(
+                  controller,
+                  child: LayoutBuilder(
+                    builder: (context, _) => CustomPaint(
+                      painter: _DocumentOverlayPainter(_corners),
+                      size: Size.infinite,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 12,
+                left: 12,
+                right: 12,
+                child: _CaptureChip(status: _capture),
               ),
             ],
           ),
         ),
-        if (_flashCaptured)
-          const Center(
-            child: _Banner('Captured!', color: Colors.green, large: true),
+        // Text area — below the camera, on the scaffold background, so the
+        // hint/caveat are readable and never cover the preview.
+        Expanded(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_error != null)
+                  _Banner(_error!, color: Colors.red.shade700)
+                else
+                  _Banner(_hint, color: Colors.black54),
+                // Manual shutter — shown only when auto-capture is off. Enabled
+                // once a document is detected (the overlay is showing), so a tap
+                // grabs the framed document.
+                if (!_autoCapture) ...[
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: (_capturing || _corners == null)
+                        ? null
+                        : () => unawaited(_captureStill()),
+                    icon: const Icon(Icons.camera_alt),
+                    label: const Text('Capture'),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                _Banner(
+                  'Demo: overlay-to-preview alignment is simplified — the quad '
+                  'may sit rotated on some devices. Detection itself is real.',
+                  color: Colors.black45,
+                ),
+              ],
+            ),
           ),
+        ),
       ],
     );
   }
@@ -442,19 +607,15 @@ class _CaptureChip extends StatelessWidget {
 }
 
 class _Banner extends StatelessWidget {
-  const _Banner(this.text, {required this.color, this.large = false});
+  const _Banner(this.text, {required this.color});
 
   final String text;
   final Color color;
-  final bool large;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: large ? 24 : 14,
-        vertical: large ? 16 : 10,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(12),
@@ -462,11 +623,7 @@ class _Banner extends StatelessWidget {
       child: Text(
         text,
         textAlign: TextAlign.center,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: large ? 22 : 14,
-          fontWeight: large ? FontWeight.bold : FontWeight.normal,
-        ),
+        style: const TextStyle(color: Colors.white, fontSize: 14),
       ),
     );
   }
