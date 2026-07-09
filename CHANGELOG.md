@@ -1,3 +1,28 @@
+## 0.2.0
+
+- `DetectionSensitivity` (`strict` / `balanced` / `lenient`) — a portable control
+  over how eagerly a rectangle counts as a document, on `detect`, `detectStream`,
+  and `scan`. The level is the contract; each native engine maps it to its own
+  thresholds (Vision confidence + min-size on iOS; contour-area, adaptive-Canny
+  band, corner-angle, and score floor on Android). Context defaults:
+  `detectStream` → `strict`, `scan` → `lenient`, `detect` → `balanced`.
+- `detectStream(minInterval:)` — cap the detection rate so a 30–60 fps camera
+  doesn't run native detection on every frame (which heats the device without a
+  smoother overlay). Frames that arrive too soon are dropped as `DetectionSkipped`
+  before reaching the engine.
+- Android detection reworked for recall on solid / low-contrast documents: a
+  multi-strategy candidate generator (adaptive Canny + close, adaptive-threshold
+  silhouette, Triangle auto-threshold) pooled through `convexHull` + an
+  `approxPolyDP` epsilon sweep, then scored by rectangularity + right-angle-ness
+  instead of taking the first/largest quad. `RETR_EXTERNAL`, a max-area cap, and a
+  per-level score floor reject the whole-frame false capture and background
+  clutter that a single Canny pass either missed or over-triggered on.
+- Example: a camera-capture flow (live preview → shutter → scan → result), the
+  realtime flow now grabs a full-resolution still on auto-capture and shows the
+  scanned result (with an auto/manual toggle), a shared pinch-zoomable result
+  screen, tap-to-inspect multi-page thumbnails, and a working PDF export via the
+  system share sheet.
+
 ## 0.1.1
 
 - `DocumentProcessor.pagesToPdf(List<ScannedDocument>)` — combine several
