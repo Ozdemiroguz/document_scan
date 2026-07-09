@@ -8,6 +8,11 @@ build/
 *.iml
 .idea/
 
+# Raw screen-recording GIFs kept locally as the source for the demo animations.
+# Only the optimized doc/*.webp derived from them ship — a raw GIF is 10–40 MB
+# and would dwarf the whole archive.
+*.gif
+
 # The example's platform scaffolding (Xcode/Gradle projects, app icons, launch
 # storyboards) is only needed to *run* the demo locally — it's noise on the
 # pub.dev "Source" tab and bloats the archive. Exclude it; the example's lib/,

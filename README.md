@@ -30,11 +30,8 @@ into a clean scan.
 > Not a fullscreen scanner plugin — a document scan engine you drive from your
 > own UI.
 
-<!-- SHOT 1 · HERO — realtime detection (animated .webp). RECORD: camera on an
-     A4 page, dark plain surface; the green quad tracks the document as you move.
-     4–6 s. When ready, host at doc/realtime.webp and swap the src below. -->
 <p align="center">
-  <img src="https://placehold.co/280x580/1e293b/1DE9B6/webp?text=SHOT+1%0ARealtime%0Adetection%0A%28webp%29" width="280" alt="Realtime document detection (placeholder)">
+  <img src="doc/realtime.webp" width="280" alt="Realtime document detection — the green quad tracks the document live, then auto-captures">
 </p>
 
 ## 🤔 Why this exists
@@ -110,10 +107,8 @@ dependencies:
 
 ## 🖼️ Scan a still image
 
-<!-- SHOT 2 · Gallery scan (animated .webp). RECORD: pick an A4 page, show the
-     cropped result appear; flick the filter dropdown. 3–5 s. Swap src when ready. -->
 <p align="center">
-  <img src="https://placehold.co/260x540/1e293b/1DE9B6/webp?text=SHOT+2%0AGallery%0Ascan%0A%28webp%29" width="260" alt="Gallery scan (placeholder)">
+  <img src="doc/camera.webp" width="260" alt="Capturing a document from the camera and scanning it to a clean crop">
 </p>
 
 The one-call path — `DocumentScanner` detects the corners and returns a clean,
@@ -150,11 +145,8 @@ Pass them and detection is skipped:
 final scan = await scanner.scan(input, corners: editedCorners);
 ```
 
-<!-- SHOT 3 · Manual corner edit (animated .webp). RECORD: a business card / ID —
-     drag the green corner handles to correct the quad, then Crop. 4–6 s. The
-     drag is the point. Swap src when ready. -->
 <p align="center">
-  <img src="https://placehold.co/260x540/1e293b/1DE9B6/webp?text=SHOT+3%0AManual%0Acorner+edit%0A%28webp%29" width="260" alt="Manual corner adjustment (placeholder)">
+  <img src="doc/manual.webp" width="260" alt="Manual corner adjustment — dragging the quad handles to correct the crop">
 </p>
 
 > **Stays off the UI thread.** The warp is pure-Dart CPU work (≈1s on a
@@ -239,6 +231,29 @@ detector.detectStream(myCameraFrames, stabilize: CornerStabilizer());
 // resetDistance:) for steadier-but-laggier vs snappier.
 ```
 
+### Detection rate & sensitivity
+
+A camera pushes 30–60 frames a second, but running native detection on every one
+just heats the device without a smoother overlay. Cap the rate with `minInterval`
+— a frame that arrives too soon is dropped (as a `DetectionSkipped`) before it
+reaches the engine. `sensitivity` tunes how eagerly a rectangle counts as a
+document: `detectStream` defaults to `strict` (fewer false locks on tabletops and
+shadows while framing), `scan()` to `lenient` (the user already committed to a
+document), `detect()` to `balanced`.
+
+```dart
+detector.detectStream(
+  myCameraFrames,
+  minInterval: const Duration(milliseconds: 100), // ~10 detections/sec
+  sensitivity: DetectionSensitivity.strict,       // strict | balanced | lenient
+);
+```
+
+Detection runs at a capped resolution (~720px), so `ResolutionPreset.high` is
+plenty — the extra pixels don't improve corner-finding and only cost time. Frame
+drops under load are normal and surface as `DetectionSkipped`, not errors; on a
+slower device the effective rate just settles below your `minInterval` cap.
+
 ### Auto-capture
 
 Wire `AutoCaptureAnalyzer` to fire once the document has been held steady and
@@ -303,6 +318,13 @@ final input = ScanInput.bgraFrame(
 | `sharpen`      | Crisper text edges.                          |
 | `magicColor`   | Brightened, saturated color for photos/receipts. |
 
+Detect and crop once, then swap filters cheaply — only the filter re-runs, not
+detection — via `DocumentProcessor`:
+
+<p align="center">
+  <img src="doc/reprocess.webp" width="260" alt="Re-filtering a scanned document live">
+</p>
+
 ## 💾 Output formats
 
 `output:` picks how the scan is encoded — the same cropped, filtered image, a
@@ -330,11 +352,8 @@ final pdf = await const DocumentProcessor()
 // pdf!.bytes — a single multi-page PDF, one A4 page per scan.
 ```
 
-<!-- SHOT 4 · Multi-page session (animated .webp). RECORD: add a couple of pages,
-     drag one to reorder, tap "Export PDF" to show the PDF-ready dialog. 5–7 s.
-     Swap src when ready. -->
 <p align="center">
-  <img src="https://placehold.co/260x540/1e293b/1DE9B6/webp?text=SHOT+4%0AMulti-page%0Asession%0A%28webp%29" width="260" alt="Multi-page session (placeholder)">
+  <img src="doc/multipage.webp" width="260" alt="Collecting several scans into a multi-page session and exporting one PDF">
 </p>
 
 ## 📤 What you get back
