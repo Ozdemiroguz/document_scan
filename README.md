@@ -102,7 +102,7 @@ Two ways to crop a still image:
 
 ```yaml
 dependencies:
-  document_scan: ^0.2.0
+  document_scan: ^0.2.1
 ```
 
 ## 🖼️ Scan a still image

@@ -1,3 +1,9 @@
+## 0.2.1
+
+- Fix a broken link in the API reference: a dartdoc reference pointed at
+  `VNRectangleObservation`, an iOS-only Swift type with no Dart symbol, so it
+  rendered as a dead link on the `confidence` docs. Now plain code text.
+
 ## 0.2.0
 
 - `DetectionSensitivity` (`strict` / `balanced` / `lenient`) — a portable control
