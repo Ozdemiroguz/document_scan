@@ -413,6 +413,19 @@ android {
 }
 ```
 
+## 🔐 Permissions
+
+**The package requests none.** Its Android manifest declares no permissions, and
+its iOS privacy manifest lists no accessed APIs, no tracking, and no data
+collection — detection runs on the frames and files *you* hand it, on-device.
+
+Because the package never opens a camera or the gallery, any permission your app
+needs comes from *your* capture layer, and you declare it — e.g. an
+`NSCameraUsageDescription` in `Info.plist` and a `CAMERA` permission for the
+[`camera`](https://pub.dev/packages/camera) package, or a photo-library
+permission for [`image_picker`](https://pub.dev/packages/image_picker). If you
+only feed it file paths you already have, you may need no permissions at all.
+
 ## 🧭 Design
 
 The package deliberately owns as little as possible: no camera, no OCR, no UI. It
