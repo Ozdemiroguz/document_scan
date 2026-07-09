@@ -21,6 +21,7 @@ import org.opencv.android.Utils
 import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
+import org.opencv.core.MatOfInt
 import org.opencv.core.MatOfPoint
 import org.opencv.core.MatOfPoint2f
 import org.opencv.core.Point
@@ -77,9 +78,10 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
                     result.error("INVALID_ARGS", "path required", null); return
                 }
                 if (!opencvReady) { result.success(null); return }
+                val sens = Sensitivity.from(call.argument<String>("sensitivity"))
                 executor.execute {
                     try {
-                        val corners = detectFromFile(path)
+                        val corners = detectFromFile(path, sens)
                         mainHandler.post { result.success(corners) }
                     } catch (e: Exception) {
                         mainHandler.post { result.error("DETECTION_ERROR", e.message, null) }
@@ -95,6 +97,7 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
                     result.error("INVALID_ARGS", "width/height required", null); return
                 }
                 if (!opencvReady || frameBusy) { result.success(null); return }
+                val sens = Sensitivity.from(call.argument<String>("sensitivity"))
                 frameBusy = true
                 executor.execute {
                     try {
@@ -107,13 +110,13 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
                                 val uvStride = call.argument<Int>("uvRowStride") ?: width
                                 val uvPixel = call.argument<Int>("uvPixelStride") ?: 1
                                 if (y == null || u == null || v == null) null
-                                else detectFromYuv(y, u, v, width, height, yStride, uvStride, uvPixel, rotation)
+                                else detectFromYuv(y, u, v, width, height, yStride, uvStride, uvPixel, rotation, sens)
                             }
                             else -> {
                                 val bytes = call.argument<ByteArray>("bytes")
                                 val bpr = call.argument<Int>("bytesPerRow") ?: (width * 4)
                                 if (bytes == null) null
-                                else detectFromBgra(bytes, width, height, bpr, rotation)
+                                else detectFromBgra(bytes, width, height, bpr, rotation, sens)
                             }
                         }
                         mainHandler.post { result.success(corners) }
@@ -134,7 +137,7 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
 
     // --- Still image (file) : returns PIXEL-normalized corners (0..1 of image) ---
 
-    private fun detectFromFile(path: String): Map<String, Double>? {
+    private fun detectFromFile(path: String, sens: Sensitivity): Map<String, Double>? {
         val file = File(path)
         if (!file.exists()) return null
         val bitmap = decodeBitmapWithOrientation(file) ?: return null
@@ -168,7 +171,7 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
         Utils.bitmapToMat(work, src)
         work.recycle()
         val quad = try {
-            detectBestQuad(src)
+            detectBestQuad(src, sens)
         } finally {
             src.release()
         } ?: return null
@@ -191,7 +194,7 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
 
     private fun detectFromYuv(
         y: ByteArray, u: ByteArray, v: ByteArray, width: Int, height: Int,
-        yStride: Int, uvStride: Int, uvPixel: Int, rotation: Int,
+        yStride: Int, uvStride: Int, uvPixel: Int, rotation: Int, sens: Sensitivity,
     ): Map<String, Double>? {
         val nv21 = toNv21(y, u, v, width, height, yStride, uvStride, uvPixel)
         if (emulatorMode) {
@@ -199,7 +202,7 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
             val mat = Mat()
             Utils.bitmapToMat(bmp, mat)
             bmp.recycle()
-            return detectAndNormalize(mat, rotation)
+            return detectAndNormalize(mat, rotation, sens)
         }
         val yuvMat = Mat(height + height / 2, width, CvType.CV_8UC1)
         yuvMat.put(0, 0, nv21)
@@ -223,11 +226,12 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
             bgr.release()
             bgr = small
         }
-        return detectAndNormalize(bgr, rotation)
+        return detectAndNormalize(bgr, rotation, sens)
     }
 
     private fun detectFromBgra(
         bytes: ByteArray, width: Int, height: Int, bytesPerRow: Int, rotation: Int,
+        sens: Sensitivity,
     ): Map<String, Double>? {
         val mat: Mat
         if (bytesPerRow == width * 4) {
@@ -240,10 +244,10 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
             mat = padded.submat(0, height, 0, width).clone()
             padded.release()
         }
-        return detectAndNormalize(mat, rotation)
+        return detectAndNormalize(mat, rotation, sens)
     }
 
-    private fun detectAndNormalize(mat: Mat, rotation: Int): Map<String, Double>? {
+    private fun detectAndNormalize(mat: Mat, rotation: Int, sens: Sensitivity): Map<String, Double>? {
         val rotated = when (rotation) {
             90 -> Mat().also { Core.rotate(mat, it, Core.ROTATE_90_CLOCKWISE); mat.release() }
             180 -> Mat().also { Core.rotate(mat, it, Core.ROTATE_180); mat.release() }
@@ -261,7 +265,7 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
         val fw = work.cols().toDouble()
         val fh = work.rows().toDouble()
         val quad = try {
-            detectBestQuad(work)
+            detectBestQuad(work, sens)
         } finally {
             work.release()
         } ?: return null
@@ -292,6 +296,39 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
 
     // --- Proven OpenCV edge pipeline ---
 
+    /// Maps the Dart `DetectionSensitivity` to the OpenCV pipeline's knobs. The
+    /// level is the portable contract; these are its Android values.
+    ///
+    /// - [minAreaFraction]: a candidate quad must cover at least this fraction of
+    ///   the frame. Strict wants a bigger, more committed document.
+    /// - [cannyLoFactor]/[cannyHiFactor]: the adaptive-Canny band, scaled off the
+    ///   frame's mean brightness (Strategy A). Lower factors keep weaker edges.
+    /// - [maxCosine]: how far a corner may deviate from a right angle (cosine of
+    ///   the corner angle). Strict demands squarer corners; lenient tolerates
+    ///   more perspective skew.
+    /// - [minScore]: the floor the best-scored candidate must clear to count as a
+    ///   document at all — the multi-strategy generator finds *something* in most
+    ///   frames, so this is what rejects non-documents.
+    enum class Sensitivity(
+        val minAreaFraction: Double,
+        val cannyLoFactor: Double,
+        val cannyHiFactor: Double,
+        val maxCosine: Double,
+        val minScore: Double,
+    ) {
+        STRICT(0.10, 0.80, 1.50, 0.35, 0.52),
+        BALANCED(0.06, 0.66, 1.33, 0.42, 0.46),
+        LENIENT(0.03, 0.50, 1.10, 0.50, 0.38);
+
+        companion object {
+            fun from(name: String?): Sensitivity = when (name) {
+                "strict" -> STRICT
+                "lenient" -> LENIENT
+                else -> BALANCED
+            }
+        }
+    }
+
     /// Detects the best document quad in [src] and returns its four corner
     /// points (in [src]'s pixel space), or null if none is found.
     ///
@@ -302,13 +339,12 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
     /// only owns the input [src]. Returning plain `Point`s (not Mats) is what
     /// makes that guarantee possible: earlier this leaked a `List<MatOfPoint>`
     /// every frame, which grew the native heap until OOM on a long scan.
-    private fun detectBestQuad(src: Mat): List<Point>? {
+    private fun detectBestQuad(src: Mat, sens: Sensitivity): List<Point>? {
         val gray = Mat()
-        val canned = Mat()
-        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(9.0, 9.0))
-        val dilated = Mat()
-        val hierarchy = Mat()
-        val contours = ArrayList<MatOfPoint>()
+        val filtered = Mat()
+        // 5x5 ellipse for MORPH_CLOSE: bridges broken/faint edges without the
+        // outline-bloat and shape-shift of the old bare 9x9 dilate.
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(5.0, 5.0))
         try {
             // The input may be 3-channel (BGR, from the YUV path) or 4-channel
             // (RGBA, from bitmapToMat / the BGRA frame path). Pick the matching
@@ -321,42 +357,196 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
                 Imgproc.COLOR_BGR2GRAY
             }
             Imgproc.cvtColor(src, gray, grayCode)
-            Imgproc.GaussianBlur(gray, gray, Size(5.0, 5.0), 0.0)
-            Imgproc.threshold(gray, gray, 20.0, 255.0, Imgproc.THRESH_TRIANGLE)
-            Imgproc.Canny(gray, canned, 75.0, 200.0)
-            Imgproc.dilate(canned, dilated, kernel)
 
+            // Edge-preserving denoise: bilateral smooths flat areas (paper, desk)
+            // while keeping the faint page boundary — better recall on soft edges
+            // than a Gaussian blur, which would wash the boundary out too.
+            Imgproc.bilateralFilter(gray, filtered, 9, 75.0, 75.0)
+
+            val frameArea = (filtered.rows() * filtered.cols()).toDouble()
+            val minArea = frameArea * sens.minAreaFraction
+            // A quad that covers almost the whole frame is the frame itself (or a
+            // wall/desk filling the view), not a document held within it. Cap the
+            // candidate area so the "everything is a document" quad is rejected
+            // before it can win the score. Real documents leave a margin.
+            val maxArea = frameArea * MAX_AREA_FRACTION
+            val candidates = ArrayList<List<Point>>()
+
+            // A single detection strategy can't cover every scene, so run three
+            // and pool their quads — the scorer picks the winner. Each strategy
+            // targets a different failure mode of the others.
+
+            // Strategy A — adaptive Canny + close. Strong on high-contrast edges
+            // (dark document on a light desk); the band adapts to brightness.
+            run {
+                val edges = Mat()
+                try {
+                    val mean = Core.mean(filtered).`val`[0]
+                    val lo = (sens.cannyLoFactor * mean).coerceIn(20.0, 120.0)
+                    val hi = (sens.cannyHiFactor * mean).coerceIn(80.0, 240.0)
+                    Imgproc.Canny(filtered, edges, lo, hi)
+                    Imgproc.morphologyEx(edges, edges, Imgproc.MORPH_CLOSE, kernel)
+                    candidates += quadsFrom(edges, minArea, maxArea, sens.maxCosine)
+                } finally {
+                    edges.release()
+                }
+            }
+
+            // Strategy B — adaptive-threshold silhouette. Segments the paper as a
+            // bright region instead of chasing a gradient, so it's the one that
+            // survives low contrast (white page on a light desk), where edges
+            // barely exist.
+            run {
+                val bin = Mat()
+                try {
+                    Imgproc.adaptiveThreshold(
+                        filtered, bin, 255.0,
+                        Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY_INV,
+                        21, 10.0,
+                    )
+                    Imgproc.morphologyEx(bin, bin, Imgproc.MORPH_CLOSE, kernel)
+                    candidates += quadsFrom(bin, minArea, maxArea, sens.maxCosine)
+                } finally {
+                    bin.release()
+                }
+            }
+
+            // Strategy C — Triangle auto-threshold then Canny. The Triangle
+            // algorithm picks the cut automatically, handling uneven lighting
+            // that a fixed threshold or brightness-scaled Canny alone misses.
+            run {
+                val bin = Mat()
+                val edges = Mat()
+                try {
+                    Imgproc.threshold(
+                        filtered, bin, 0.0, 255.0,
+                        Imgproc.THRESH_BINARY + Imgproc.THRESH_TRIANGLE,
+                    )
+                    Imgproc.Canny(bin, edges, 50.0, 150.0)
+                    Imgproc.morphologyEx(edges, edges, Imgproc.MORPH_CLOSE, kernel)
+                    candidates += quadsFrom(edges, minArea, maxArea, sens.maxCosine)
+                } finally {
+                    bin.release(); edges.release()
+                }
+            }
+
+            // Pick the best quad across all strategies — not the first found, not
+            // the largest. A shadow or table edge can out-area the document, so
+            // score by shape (rectangularity + right-angle-ness) with a light
+            // size term, and require the winner to clear the level's floor.
+            val best = candidates.maxByOrNull { scoreQuad(it, frameArea) } ?: return null
+            if (scoreQuad(best, frameArea) < sens.minScore) return null
+            return best
+        } finally {
+            gray.release(); filtered.release(); kernel.release()
+        }
+    }
+
+    /// Extracts candidate document quads from a binary edge/silhouette [map].
+    ///
+    /// Uses `RETR_EXTERNAL` (outermost contours only — inner text blocks can't
+    /// win), takes the hull of each large contour (erasing finger/shadow/dog-ear
+    /// concavities so it simplifies to 4 points more reliably), then sweeps the
+    /// approx tolerance until a convex, right-angled 4-gon appears. Owns and
+    /// releases every native Mat it allocates; returns only plain [Point]s.
+    private fun quadsFrom(
+        map: Mat, minArea: Double, maxArea: Double, maxCosine: Double,
+    ): List<List<Point>> {
+        val contours = ArrayList<MatOfPoint>()
+        val hierarchy = Mat()
+        val out = ArrayList<List<Point>>()
+        try {
             Imgproc.findContours(
-                dilated, contours, hierarchy,
-                Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE,
+                map, contours, hierarchy,
+                Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE,
             )
-
-            val candidates = contours
-                .filter { Imgproc.contourArea(it) > 100e2 }
+            val big = contours
+                .filter {
+                    val a = Imgproc.contourArea(it)
+                    a > minArea && a < maxArea
+                }
                 .sortedByDescending { Imgproc.contourArea(it) }
-                .take(5)
+                .take(6)
 
-            for (contour in candidates) {
-                val c2f = MatOfPoint2f(*contour.toArray())
+            for (contour in big) {
+                val hull = MatOfInt()
+                val hullPts = MatOfPoint()
+                val h2f = MatOfPoint2f()
                 val approx = MatOfPoint2f()
                 val convex = MatOfPoint()
                 try {
-                    val peri = Imgproc.arcLength(c2f, true)
-                    Imgproc.approxPolyDP(c2f, approx, 0.03 * peri, true)
-                    val pts = approx.toArray().toList()
-                    approx.convertTo(convex, CvType.CV_32S)
-                    if (pts.size == 4 && Imgproc.isContourConvex(convex)) return pts
+                    // convexHull returns indices; map them back to points.
+                    Imgproc.convexHull(contour, hull)
+                    val src = contour.toArray()
+                    val idx = hull.toArray()
+                    hullPts.fromList(idx.map { src[it] })
+                    h2f.fromArray(*hullPts.toArray())
+                    val peri = Imgproc.arcLength(h2f, true)
+                    // Sweep the tolerance instead of a single guess: a noisy or
+                    // slightly curved edge may only collapse to 4 points at one
+                    // particular epsilon.
+                    for (frac in EPSILON_SWEEP) {
+                        Imgproc.approxPolyDP(h2f, approx, frac * peri, true)
+                        val pts = approx.toArray().toList()
+                        if (pts.size == 4) {
+                            approx.convertTo(convex, CvType.CV_32S)
+                            if (Imgproc.isContourConvex(convex) &&
+                                maxCornerCosine(pts) < maxCosine) {
+                                out += pts
+                                break
+                            }
+                        }
+                    }
                 } finally {
-                    c2f.release(); approx.release(); convex.release()
+                    hull.release(); hullPts.release(); h2f.release()
+                    approx.release(); convex.release()
                 }
             }
-            return null
         } finally {
-            gray.release(); canned.release(); kernel.release()
-            dilated.release(); hierarchy.release()
-            // Release EVERY contour Mat, including the ones we didn't inspect.
+            hierarchy.release()
             for (contour in contours) contour.release()
         }
+        return out
+    }
+
+    /// Scores a quad 0..1 on how document-like its *shape* is, independent of
+    /// where it sits: rectangularity (fill vs its rotated bounding box) and
+    /// right-angle-ness dominate, with a light reward for size. This is what lets
+    /// a smaller, cleaner document beat a big shadow or a table edge.
+    private fun scoreQuad(quad: List<Point>, frameArea: Double): Double {
+        val poly = MatOfPoint2f(*quad.toTypedArray())
+        val polyInt = MatOfPoint(*quad.toTypedArray())
+        try {
+            val area = Imgproc.contourArea(polyInt)
+            val rect = Imgproc.minAreaRect(poly)
+            val rectArea = rect.size.width * rect.size.height
+            val rectangularity = if (rectArea > 0) (area / rectArea).coerceIn(0.0, 1.0) else 0.0
+            val rightness = (1.0 - maxCornerCosine(quad)).coerceIn(0.0, 1.0)
+            val sizeScore = (area / frameArea).coerceIn(0.0, 1.0)
+            return 0.45 * rectangularity + 0.35 * rightness + 0.20 * sizeScore
+        } finally {
+            poly.release(); polyInt.release()
+        }
+    }
+
+    /// The largest cosine over the quad's four corners (0 = perfect right angle,
+    /// 1 = degenerate/flat). Lower is more rectangle-like. Used both as a gate in
+    /// [quadsFrom] and a score term in [scoreQuad].
+    private fun maxCornerCosine(pts: List<Point>): Double {
+        if (pts.size != 4) return 1.0
+        var maxCos = 0.0
+        for (i in 0 until 4) {
+            val p0 = pts[i]
+            val p1 = pts[(i + 1) % 4]
+            val p2 = pts[(i + 3) % 4]
+            val dx1 = p1.x - p0.x; val dy1 = p1.y - p0.y
+            val dx2 = p2.x - p0.x; val dy2 = p2.y - p0.y
+            val dot = dx1 * dx2 + dy1 * dy2
+            val mag = Math.sqrt((dx1 * dx1 + dy1 * dy1) * (dx2 * dx2 + dy2 * dy2))
+            val cos = if (mag > 0) Math.abs(dot / mag) else 1.0
+            if (cos > maxCos) maxCos = cos
+        }
+        return maxCos
     }
 
     private fun orderCorners(points: List<Point>): List<Point> {
@@ -468,5 +658,15 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
         // edges are easily found at 720px, and the per-frame Mat/buffer and
         // detection cost both shrink from 1080p.
         private const val DETECTION_MAX_LONG_SIDE = 720
+
+        // A candidate covering more than this fraction of the frame is the frame
+        // itself (or a wall/desk filling the view), not a document held within
+        // it. Rejecting these is what stops "the whole camera view is a document".
+        private const val MAX_AREA_FRACTION = 0.92
+
+        // approxPolyDP tolerances (fraction of the contour perimeter) tried in
+        // order until a contour collapses to a 4-gon. A single fixed epsilon
+        // misses quads that only simplify cleanly at a different tolerance.
+        private val EPSILON_SWEEP = doubleArrayOf(0.02, 0.03, 0.05, 0.08)
     }
 }

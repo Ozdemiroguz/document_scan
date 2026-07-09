@@ -43,7 +43,7 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
         result(FlutterError(code: "INVALID_ARGS", message: "path required", details: nil))
         return
       }
-      detectFile(path: path, result: result)
+      detectFile(path: path, sensitivity: Sensitivity(args), result: result)
 
     case "detectFrame":
       guard let args = call.arguments as? [String: Any],
@@ -59,16 +59,49 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
       }
       detectFrame(
         bytes: bytes.data, width: width, height: height,
-        bytesPerRow: bytesPerRow, rotation: rotation, result: result)
+        bytesPerRow: bytesPerRow, rotation: rotation,
+        sensitivity: Sensitivity(args), result: result)
 
     default:
       result(FlutterMethodNotImplemented)
     }
   }
 
+  /// Maps the Dart `DetectionSensitivity` to Vision's confidence / min-size
+  /// gates. The two engines have different knobs, so the level is the portable
+  /// contract; these are its iOS values.
+  enum Sensitivity {
+    case strict, balanced, lenient
+
+    init(_ args: [String: Any]) {
+      switch args["sensitivity"] as? String {
+      case "strict": self = .strict
+      case "lenient": self = .lenient
+      default: self = .balanced
+      }
+    }
+
+    var minimumConfidence: VNConfidence {
+      switch self {
+      case .strict: return 0.7
+      case .balanced: return 0.6
+      case .lenient: return 0.4
+      }
+    }
+    var minimumSize: Float {
+      switch self {
+      case .strict: return 0.20
+      case .balanced: return 0.15
+      case .lenient: return 0.08
+      }
+    }
+  }
+
   // MARK: - Still image
 
-  private func detectFile(path: String, result: @escaping FlutterResult) {
+  private func detectFile(
+    path: String, sensitivity: Sensitivity, result: @escaping FlutterResult
+  ) {
     let url = URL(fileURLWithPath: path) as CFURL
     guard let source = CGImageSourceCreateWithURL(url, nil),
           let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
@@ -78,7 +111,7 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
     let orientation = readOrientation(source: source)
     let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
 
-    let request = makeRectangleRequest { corners in
+    let request = Self.makeRectangleRequest(sensitivity) { corners in
       result(corners) // normalized already (Vision returns 0..1), Y-flipped below
     }
     workQueue.async {
@@ -93,7 +126,7 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
 
   private func detectFrame(
     bytes: Data, width: Int, height: Int, bytesPerRow: Int, rotation: Int,
-    result: @escaping FlutterResult
+    sensitivity: Sensitivity, result: @escaping FlutterResult
   ) {
     guard acquireSlot() else { result(nil); return }
     let expected = bytesPerRow * height
@@ -120,7 +153,9 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
         }
         let handler = VNImageRequestHandler(
           cvPixelBuffer: buffer, orientation: orientation, options: [:])
-        let request = Self.makeRectangleRequest { corners in result(corners) }
+        let request = Self.makeRectangleRequest(sensitivity) { corners in
+          result(corners)
+        }
         do { try handler.perform([request]) }
         catch { DispatchQueue.main.async { result(nil) } }
       }
@@ -129,13 +164,8 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
 
   // MARK: - Vision request
 
-  private func makeRectangleRequest(
-    _ completion: @escaping ([String: Double]?) -> Void
-  ) -> VNDetectRectanglesRequest {
-    Self.makeRectangleRequest(completion)
-  }
-
   private static func makeRectangleRequest(
+    _ sensitivity: Sensitivity,
     _ completion: @escaping ([String: Double]?) -> Void
   ) -> VNDetectRectanglesRequest {
     let request = VNDetectRectanglesRequest { req, error in
@@ -166,11 +196,16 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
       ]
       DispatchQueue.main.async { completion(corners) }
     }
-    request.minimumConfidence = 0.3
+    // Vision detects rectangles aggressively — with loose thresholds it locks
+    // onto tabletops, screen edges, shadows, and low-confidence guesses. The
+    // confidence + minimum-size gates come from the requested sensitivity (see
+    // Sensitivity); the aspect gate stays fixed to drop extreme slivers like a
+    // table edge (0.3 = up to ~3:1) regardless of level.
+    request.minimumConfidence = sensitivity.minimumConfidence
+    request.minimumSize = sensitivity.minimumSize
     request.maximumObservations = 1
-    request.minimumAspectRatio = 0.1
+    request.minimumAspectRatio = 0.3
     request.maximumAspectRatio = 1.0
-    request.minimumSize = 0.05
     return request
   }
 
