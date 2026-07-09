@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../types/detection_sensitivity.dart';
 import '../types/document_corners.dart';
 import '../types/scan_input.dart';
 import 'corner_stabilizer.dart';
@@ -19,20 +21,33 @@ import 'detection_event.dart';
 /// [DetectionError] carrying the failure) for that frame, rather than throwing.
 class DocumentDetector {
   /// Creates a detector. [channel] is injectable for tests.
-  DocumentDetector({MethodChannel? channel})
-    : _channel = channel ?? const MethodChannel(_channelName);
+  DocumentDetector({MethodChannel? channel, @visibleForTesting DateTime Function()? clock})
+    : _channel = channel ?? const MethodChannel(_channelName),
+      _now = clock ?? DateTime.now;
 
   static const _channelName = 'com.oguzhan.document_scan/detector';
 
   final MethodChannel _channel;
 
+  /// Wall-clock source for [detectStream]'s [minInterval] throttle. Injectable
+  /// so a test can advance time deterministically instead of sleeping.
+  final DateTime Function() _now;
+
   /// Detects the document corners in a single [input].
+  ///
+  /// [sensitivity] tunes how eagerly a rectangle counts as a document (see
+  /// [DetectionSensitivity]). For a one-shot scan of a file the user chose,
+  /// [DetectionSensitivity.lenient] finds more; the default is
+  /// [DetectionSensitivity.balanced].
   ///
   /// Returns ordered [DocumentCorners] (normalized 0..1), or `null` when no
   /// document-like rectangle is found. Throws only on an unexpected channel
   /// error you'd want to surface.
-  Future<DocumentCorners?> detect(ScanInput input) async {
-    final args = _encode(input);
+  Future<DocumentCorners?> detect(
+    ScanInput input, {
+    DetectionSensitivity sensitivity = DetectionSensitivity.balanced,
+  }) async {
+    final args = _encode(input, sensitivity);
     final method = input is FileScanInput ? 'detectFile' : 'detectFrame';
     final result = await _channel.invokeMapMethod<String, dynamic>(method, args);
     return _decode(result);
@@ -46,6 +61,15 @@ class DocumentDetector {
   /// Frames that arrive while a previous one is still being processed are
   /// dropped (emitting [DetectionSkipped]) so the stream never backs up.
   ///
+  /// Pass [minInterval] to cap the detection rate: a frame that arrives sooner
+  /// than [minInterval] after the previous *processed* one is dropped (as a
+  /// [DetectionSkipped]) before it reaches the native engine. A camera can push
+  /// 30–60 frames a second; running native detection on every one wastes CPU/GPU
+  /// and heats the device without making the overlay look any smoother. A value
+  /// around `Duration(milliseconds: 100)` (~10 detections/second) keeps the
+  /// overlay live while cutting the work several-fold. Omit it (the default) to
+  /// detect as fast as the engine can, bounded only by the busy guard below.
+  ///
   /// Pass a [stabilize] filter to smooth jittery corners for an overlay — each
   /// [DetectionSuccess] then carries the EMA-smoothed corners. Omit it for the
   /// raw per-frame corners.
@@ -55,10 +79,13 @@ class DocumentDetector {
   Stream<DetectionEvent> detectStream(
     Stream<ScanInput> frames, {
     CornerStabilizer? stabilize,
+    DetectionSensitivity sensitivity = DetectionSensitivity.strict,
+    Duration? minInterval,
   }) {
     late final StreamController<DetectionEvent> controller;
     var busy = false;
     var sourceDone = false;
+    DateTime? lastStarted;
     StreamSubscription<ScanInput>? sub;
 
     // Emit only while the controller is open. The source stream can complete
@@ -82,9 +109,19 @@ class DocumentDetector {
               emit(const DetectionSkipped());
               return; // drop frame — keep the pipeline responsive
             }
+            // Rate cap: skip a frame that arrives sooner than minInterval after
+            // the previous processed one. Measured from the last frame we *ran*
+            // (not the last arrival), so dropped frames don't reset the clock.
+            if (minInterval != null && lastStarted != null) {
+              if (_now().difference(lastStarted!) < minInterval) {
+                emit(const DetectionSkipped());
+                return;
+              }
+            }
             busy = true;
+            lastStarted = _now();
             try {
-              final corners = await detect(frame);
+              final corners = await detect(frame, sensitivity: sensitivity);
               final smoothed = stabilize == null
                   ? corners
                   : stabilize.add(corners);
@@ -121,18 +158,28 @@ class DocumentDetector {
 
   // --- encode / decode ---
 
-  Map<String, dynamic> _encode(ScanInput input) {
+  Map<String, dynamic> _encode(
+    ScanInput input,
+    DetectionSensitivity sensitivity,
+  ) {
+    final s = sensitivity.wireName;
     switch (input) {
       case FileScanInput(:final path):
-        return {'path': path};
+        return {'path': path, 'sensitivity': s};
       case BytesScanInput(:final bytes, :final width, :final height):
-        return {'bytes': bytes, 'width': width, 'height': height};
+        return {
+          'bytes': bytes,
+          'width': width,
+          'height': height,
+          'sensitivity': s,
+        };
       case CameraFrameScanInput():
         return {
           'width': input.width,
           'height': input.height,
           'rotation': input.rotation,
           'format': input.format == ScanImageFormat.yuv420 ? 'yuv420' : 'bgra',
+          'sensitivity': s,
           'bytes': ?input.bytes,
           if (input.bytesPerRow > 0) 'bytesPerRow': input.bytesPerRow,
           'yBytes': ?input.yBytes,

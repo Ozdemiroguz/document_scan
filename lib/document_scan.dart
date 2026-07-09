@@ -28,6 +28,7 @@ export 'src/detector/document_detector.dart';
 export 'src/processor/document_processor.dart';
 export 'src/scanner/document_scanner.dart';
 export 'src/session/scan_session.dart';
+export 'src/types/detection_sensitivity.dart';
 export 'src/types/document_corners.dart';
 export 'src/types/scan_filter.dart';
 export 'src/types/scan_input.dart';

@@ -1,5 +1,6 @@
 import '../detector/document_detector.dart';
 import '../processor/document_processor.dart';
+import '../types/detection_sensitivity.dart';
 import '../types/document_corners.dart';
 import '../types/scan_filter.dart';
 import '../types/scan_output_format.dart';
@@ -64,8 +65,13 @@ class DocumentScanner {
     ScanOutputFormat output = ScanOutputFormat.png,
     int? maxDimension = DocumentProcessor.defaultMaxDimension,
     bool background = true,
+    DetectionSensitivity sensitivity = DetectionSensitivity.lenient,
   }) async {
-    final quad = corners ?? await _detector.detect(input);
+    // A one-shot scan of an image the caller chose defaults to lenient — they've
+    // committed to a document, so finding it matters more than the odd false
+    // positive. (Ignored when [corners] are supplied — detection is skipped.)
+    final quad =
+        corners ?? await _detector.detect(input, sensitivity: sensitivity);
     if (quad == null) return null;
     return processor.crop(
       input,

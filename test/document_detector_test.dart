@@ -50,6 +50,21 @@ void main() {
       expect(calls.single.arguments['path'], '/tmp/doc.jpg');
     });
 
+    test('sensitivity defaults to balanced on the wire', () async {
+      responder = (_) => nativeCorners();
+      await detector.detect(ScanInput.file('/x.jpg'));
+      expect(calls.single.arguments['sensitivity'], 'balanced');
+    });
+
+    test('sensitivity is passed through to the native side', () async {
+      responder = (_) => nativeCorners();
+      await detector.detect(
+        ScanInput.file('/x.jpg'),
+        sensitivity: DetectionSensitivity.lenient,
+      );
+      expect(calls.single.arguments['sensitivity'], 'lenient');
+    });
+
     test('bytes input calls detectFrame with bytes + dimensions', () async {
       responder = (_) => nativeCorners();
       await detector.detect(
@@ -248,6 +263,41 @@ void main() {
 
       expect(events, hasLength(1));
       expect(events.single, isA<DetectionEmpty>());
+
+      await sub.cancel();
+      await frames.close();
+    });
+
+    test('minInterval drops frames that arrive too soon, runs ones that dont',
+        () async {
+      // Drive time by hand so the throttle is deterministic (no sleeping).
+      var now = DateTime(2026);
+      final throttled = DocumentDetector(channel: channel, clock: () => now);
+      responder = (_) => nativeCorners();
+
+      final frames = StreamController<ScanInput>();
+      final events = <DetectionEvent>[];
+      final sub = throttled
+          .detectStream(frames.stream,
+              minInterval: const Duration(milliseconds: 100))
+          .listen(events.add);
+
+      // t=0: first frame runs (no previous timestamp to gate against).
+      frames.add(ScanInput.file('/1.jpg'));
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      // t=50ms: inside the 100ms window → dropped as DetectionSkipped.
+      now = now.add(const Duration(milliseconds: 50));
+      frames.add(ScanInput.file('/2.jpg'));
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      // t=150ms: past the window → runs.
+      now = now.add(const Duration(milliseconds: 100));
+      frames.add(ScanInput.file('/3.jpg'));
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      expect(events.whereType<DetectionSuccess>(), hasLength(2),
+          reason: 'frames 1 and 3 ran');
+      expect(events.whereType<DetectionSkipped>(), hasLength(1),
+          reason: 'frame 2 was rate-limited');
 
       await sub.cancel();
       await frames.close();
