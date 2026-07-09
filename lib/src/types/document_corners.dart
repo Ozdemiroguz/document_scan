@@ -42,7 +42,7 @@ class DocumentCorners {
   ///
   /// The two platforms derive this differently, so treat it as a relative
   /// ranking signal rather than a calibrated probability:
-  /// - **iOS**: the engine's own value ([VNRectangleObservation.confidence]).
+  /// - **iOS**: the engine's own value (`VNRectangleObservation.confidence`).
   /// - **Android**: OpenCV has no probability, so this is a geometric heuristic
   ///   from the quad's convexity, area and aspect ratio.
   ///
