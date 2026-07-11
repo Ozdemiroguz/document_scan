@@ -11,15 +11,18 @@
 ![OpenCV](https://img.shields.io/badge/OpenCV-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white)
 ![Apple Vision](https://img.shields.io/badge/Apple%20Vision-000000?style=for-the-badge&logo=apple&logoColor=white)
 
-A composable, native-light document scanner for Flutter. Find a document's four
-corners in a photo or a live camera frame, then perspective-correct and filter it
-into a clean scan.
+A composable, native-light document scanner for Flutter. It runs document edge
+detection on a photo or a live camera frame, **hands you the four corner
+coordinates** (normalized 0..1), then perspective-corrects and filters the crop
+into a clean scan. No fullscreen UI — you get the geometry and the pixels.
 
 - 🧩 **Composable, not a black box.** Two independent pieces — a `DocumentDetector`
   that finds corners and a `DocumentProcessor` that warps and filters. Use them
   together, or take just the part you need.
-- 🎛️ **Widget-free.** The package returns *data* (corners, image bytes). You build
-  the camera UI, the overlay, and the "capture" button exactly how you want.
+- 🎛️ **Widget-free — returns corner data, not a screen.** You get the four corner
+  points and the processed image bytes, so you build the camera UI, the overlay,
+  and the "capture" button exactly how you want. (Most scanners hand back a
+  cropped file path and their own fullscreen UI.)
 - 🪶 **Native-light.** Corner detection uses the platform's own vision engine —
   **Apple Vision on iOS (0 MB)** and **OpenCV on Android** — with no bundled ML
   model, no OCR, and no camera dependency.
@@ -307,7 +310,9 @@ final input = ScanInput.bgraFrame(
 
 ## 🎨 Filters
 
-`DocumentProcessor` applies pure-Dart filters after cropping:
+Turn a raw crop into a clean, readable page — boost contrast, drop to a crisp
+black-and-white "scanned paper" look, or sharpen faint text. `DocumentProcessor`
+applies these pure-Dart filters after cropping:
 
 | `ScanFilter`   | Result                                       |
 | -------------- | -------------------------------------------- |

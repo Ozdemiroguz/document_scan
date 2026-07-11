@@ -13,6 +13,12 @@ build/
 # and would dwarf the whole archive.
 *.gif
 
+# Generated dartdoc HTML output (`dart doc` writes it to doc/api/). It's build
+# output, not source — 180+ files that bloat the archive and are noise on the
+# Source tab. The demo doc/*.webp images still ship (they're README images);
+# only the generated api/ subtree is excluded.
+doc/api/
+
 # The example's platform scaffolding (Xcode/Gradle projects, app icons, launch
 # storyboards) is only needed to *run* the demo locally — it's noise on the
 # pub.dev "Source" tab and bloats the archive. Exclude it; the example's lib/,

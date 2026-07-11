@@ -58,6 +58,17 @@ class DocumentScanner {
   /// channel, already off the UI thread, and can't run inside an isolate.) Pass
   /// `false` if you're already calling this from your own background isolate, to
   /// avoid a redundant isolate hop.
+  ///
+  /// ```dart
+  /// final scanner = DocumentScanner();
+  ///
+  /// // Fully automatic: detect the corners and return a clean scan.
+  /// final scan = await scanner.scan(ScanInput.file('/path/to/photo.jpg'));
+  /// if (scan != null) Image.memory(scan.bytes); // PNG by default
+  ///
+  /// // Or crop with corners the user dragged (detection is skipped):
+  /// final corrected = await scanner.scan(input, corners: editedCorners);
+  /// ```
   Future<ScannedDocument?> scan(
     ScanInput input, {
     DocumentCorners? corners,

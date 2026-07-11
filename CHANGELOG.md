@@ -1,5 +1,14 @@
 ## 0.2.1
 
+Docs & discoverability only — no API or behaviour changes.
+
+- Add runnable code examples to the dartdoc of `DocumentScanner.scan`,
+  `DocumentDetector.detect`, and `DocumentDetector.detectStream`, so the API
+  reference stands on its own without jumping back to the README.
+- Sharpen the package description and README to lead with what sets it apart —
+  a headless engine that hands you the document's corner coordinates, offline,
+  rather than a fullscreen scanner UI.
+- Retune `topics` for discovery.
 - Fix a broken link in the API reference: a dartdoc reference pointed at
   `VNRectangleObservation`, an iOS-only Swift type with no Dart symbol, so it
   rendered as a dead link on the `confidence` docs. Now plain code text.

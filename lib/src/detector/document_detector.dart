@@ -43,6 +43,14 @@ class DocumentDetector {
   /// Returns ordered [DocumentCorners] (normalized 0..1), or `null` when no
   /// document-like rectangle is found. Throws only on an unexpected channel
   /// error you'd want to surface.
+  ///
+  /// ```dart
+  /// final corners = await detector.detect(ScanInput.file('/path/to/photo.jpg'));
+  /// if (corners != null) {
+  ///   // corners.topLeft / topRight / bottomRight / bottomLeft are (x, y) in 0..1
+  ///   // — draw them, let the user confirm, or feed them to DocumentProcessor.
+  /// }
+  /// ```
   Future<DocumentCorners?> detect(
     ScanInput input, {
     DetectionSensitivity sensitivity = DetectionSensitivity.balanced,
@@ -76,6 +84,27 @@ class DocumentDetector {
   ///
   /// The package does not own the camera — pass frames from your own capture
   /// (e.g. the `camera` package's image stream) as [CameraFrameScanInput]s.
+  ///
+  /// ```dart
+  /// final sub = detector
+  ///     .detectStream(
+  ///       myCameraFrames, // Stream<ScanInput>
+  ///       stabilize: CornerStabilizer(), // smooth the overlay
+  ///       minInterval: const Duration(milliseconds: 100), // ~10 fps
+  ///     )
+  ///     .listen((event) {
+  ///       switch (event) {
+  ///         case DetectionSuccess(:final corners):
+  ///           setState(() => _corners = corners); // draw in your overlay
+  ///         case DetectionEmpty():
+  ///           setState(() => _corners = null); // "point at a document"
+  ///         case DetectionSkipped():
+  ///           break; // dropped under load — normal, ignore
+  ///         case DetectionError(:final error):
+  ///           debugPrint('detect failed: $error'); // stream stays alive
+  ///       }
+  ///     });
+  /// ```
   Stream<DetectionEvent> detectStream(
     Stream<ScanInput> frames, {
     CornerStabilizer? stabilize,
