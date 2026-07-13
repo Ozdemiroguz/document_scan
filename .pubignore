@@ -8,6 +8,9 @@ build/
 *.iml
 .idea/
 
+# Repo-only docs — useful on GitHub, but noise in the published archive.
+ROADMAP.md
+
 # Raw screen-recording GIFs kept locally as the source for the demo animations.
 # Only the optimized doc/*.webp derived from them ship — a raw GIF is 10–40 MB
 # and would dwarf the whole archive.

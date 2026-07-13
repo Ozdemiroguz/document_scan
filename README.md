@@ -438,6 +438,13 @@ gives you corners and pixels; everything above that is yours. If a native engine
 is unavailable, detection returns `null` rather than throwing — your app keeps
 running.
 
+## 🗺️ Roadmap
+
+`document_scan` is actively maintained — small, regular releases. See
+[ROADMAP.md](ROADMAP.md) for what's shipped, what's next, and what's deliberately
+out of scope. Requests and feedback are welcome via
+[issues](https://github.com/Ozdemiroguz/document_scan/issues).
+
 ## 👤 Author
 
 Built by **Oğuzhan Özdemir**.
