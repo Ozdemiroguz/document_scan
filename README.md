@@ -11,6 +11,10 @@
 ![OpenCV](https://img.shields.io/badge/OpenCV-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white)
 ![Apple Vision](https://img.shields.io/badge/Apple%20Vision-000000?style=for-the-badge&logo=apple&logoColor=white)
 
+<p align="center">
+  <img src="doc/logo.png" width="200" alt="document_scan">
+</p>
+
 A composable, native-light document scanner for Flutter. It runs document edge
 detection on a photo or a live camera frame, **hands you the four corner
 coordinates** (normalized 0..1), then perspective-corrects and filters the crop

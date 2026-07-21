@@ -1,3 +1,10 @@
+## 0.2.2
+
+Visual identity only — no API or behaviour changes.
+
+- Add a package logo, shown as the pub.dev listing thumbnail.
+- Add a landscape cover image for link/social previews.
+
 ## 0.2.1
 
 Docs & discoverability only — no API or behaviour changes.
