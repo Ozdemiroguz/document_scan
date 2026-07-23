@@ -1,3 +1,8 @@
+## 0.2.3
+
+- Declare the logo under `screenshots:` so it renders as the pub.dev listing
+  thumbnail (0.2.2 shipped the image but didn't register it).
+
 ## 0.2.2
 
 Visual identity only — no API or behaviour changes.

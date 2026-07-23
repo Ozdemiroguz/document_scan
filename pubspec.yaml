@@ -1,6 +1,6 @@
 name: document_scan
 description: "Headless document scanner for Flutter — detects a document's corners in live camera frames and photos, offline. Composable engine, not a fullscreen UI."
-version: 0.2.2
+version: 0.2.3
 homepage: https://github.com/Ozdemiroguz/document_scan
 repository: https://github.com/Ozdemiroguz/document_scan
 issue_tracker: https://github.com/Ozdemiroguz/document_scan/issues
@@ -11,6 +11,10 @@ topics:
   - offline
   - computer-vision
   - opencv
+
+screenshots:
+  - description: "document_scan — headless document corner detection for Flutter."
+    path: doc/logo.png
 
 environment:
   sdk: ^3.12.0
