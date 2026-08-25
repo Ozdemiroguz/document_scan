@@ -1,3 +1,20 @@
+## Unreleased
+
+Discovery and positioning only — no API or behaviour changes.
+
+- Retune `topics` for how people actually search. `edge-detection` (nothing in
+  this niche claims it) and `camera` and `pdf` (both real capabilities here, and
+  the topics competitors browse) replace `scanner` (redundant with
+  `document-scanner`), `computer-vision`, and `opencv` — the last of which drew
+  the wrong audience, since someone searching "opencv" wants a binding, and it
+  described only the Android half anyway.
+- Lead the description with "document edge detection" rather than "headless".
+  Ranking first for a phrase nobody types is not discovery.
+- README: the "How it compares" table gained a third camp. Offline classical-CV
+  scanners you can style now exist, so "offline" and "no Play Services" no
+  longer separate this package. What does: it ships no widgets and has no
+  `camera` dependency.
+
 ## 0.3.0
 
 Three behaviour fixes. No API breaks — every existing call still compiles — but
