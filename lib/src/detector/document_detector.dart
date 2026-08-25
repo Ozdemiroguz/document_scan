@@ -208,6 +208,13 @@ class DocumentDetector {
           'sensitivity': s,
         };
       case CameraFrameScanInput():
+        // The chroma planes are deliberately NOT put on the wire. Detection is
+        // a grayscale pipeline on both platforms — Android works straight off
+        // the Y plane, iOS only ever handled BGRA — so marshalling U and V
+        // would copy roughly `width * height / 2` bytes across the platform
+        // channel, for every frame, into something nothing reads. At 1080p and
+        // 30 fps that is tens of MB a second of pure overhead. Callers still
+        // pass the planes (see [ScanInput.yuvFrame]); they just stop here.
         return {
           'width': input.width,
           'height': input.height,
@@ -217,11 +224,7 @@ class DocumentDetector {
           'bytes': ?input.bytes,
           if (input.bytesPerRow > 0) 'bytesPerRow': input.bytesPerRow,
           'yBytes': ?input.yBytes,
-          'uBytes': ?input.uBytes,
-          'vBytes': ?input.vBytes,
           if (input.yRowStride > 0) 'yRowStride': input.yRowStride,
-          if (input.uvRowStride > 0) 'uvRowStride': input.uvRowStride,
-          'uvPixelStride': input.uvPixelStride,
         };
     }
   }

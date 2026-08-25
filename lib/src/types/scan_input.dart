@@ -48,6 +48,13 @@ sealed class ScanInput {
   ///
   /// Prefer this over [ScanInput.cameraFrame] for YUV — it makes the three
   /// planes required, so a missing plane can't slip through.
+  ///
+  /// Note that **detection currently reads the luma ([yBytes]) plane only** and
+  /// the chroma planes never leave Dart: the native pipeline is grayscale, so
+  /// sending them would copy megabytes a second for nothing. They stay in the
+  /// signature because a frame is what your camera hands you — keep passing
+  /// them, and a future colour-aware detector can use them without an API
+  /// change.
   factory ScanInput.yuvFrame({
     required int width,
     required int height,

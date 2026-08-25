@@ -81,7 +81,36 @@ void main() {
       expect(calls.single.arguments['bytes'], isA<Uint8List>());
     });
 
-    test('yuv420 camera frame encodes planes + strides + format', () async {
+    test(
+      'yuv420 camera frame sends luma only, never the chroma planes',
+      () async {
+        // The native pipeline is grayscale, so U and V would be ~width*height/2
+        // bytes copied across the platform channel per frame into something
+        // nothing reads. This locks them off the wire.
+        responder = (_) => nativeCorners();
+        await detector.detect(
+          ScanInput.yuvFrame(
+            width: 1920,
+            height: 1080,
+            yBytes: Uint8List.fromList([1]),
+            uBytes: Uint8List.fromList([2]),
+            vBytes: Uint8List.fromList([3]),
+            yRowStride: 1920,
+            uvRowStride: 960,
+            uvPixelStride: 2,
+          ),
+        );
+
+        final args = calls.single.arguments as Map;
+        expect(args['yBytes'], isA<Uint8List>());
+        expect(args.containsKey('uBytes'), isFalse);
+        expect(args.containsKey('vBytes'), isFalse);
+        expect(args.containsKey('uvRowStride'), isFalse);
+        expect(args.containsKey('uvPixelStride'), isFalse);
+      },
+    );
+
+    test('yuv420 camera frame encodes plane + stride + format', () async {
       responder = (_) => nativeCorners();
       await detector.detect(
         ScanInput.cameraFrame(
@@ -103,10 +132,7 @@ void main() {
       expect(args['format'], 'yuv420');
       expect(args['rotation'], 90);
       expect(args['yBytes'], isA<Uint8List>());
-      expect(args['uBytes'], isA<Uint8List>());
-      expect(args['vBytes'], isA<Uint8List>());
       expect(args['yRowStride'], 1920);
-      expect(args['uvPixelStride'], 2);
     });
 
     test('bgra camera frame encodes format bgra', () async {

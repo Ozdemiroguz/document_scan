@@ -2,10 +2,7 @@ package com.oguzhan.document_scan
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.ImageFormat
 import android.graphics.Matrix
-import android.graphics.Rect
-import android.graphics.YuvImage
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -27,7 +24,6 @@ import org.opencv.core.MatOfPoint2f
 import org.opencv.core.Point
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -38,10 +34,15 @@ import java.util.concurrent.Executors
  *
  * Channel: `com.oguzhan.document_scan/detector`
  *  - `detectFile`  { path }                        -> corners (pixel-normalized)
- *  - `detectFrame` { width,height,rotation,format, y/u/v or bytes, strides }
+ *  - `detectFrame` { width,height,rotation,format, y or bytes, strides }
  *
- * Pipeline (proven): grayscale -> GaussianBlur -> threshold(TRIANGLE) ->
- * Canny -> dilate -> findContours -> approxPolyDP -> largest convex 4-gon,
+ * A `yuv420` frame is read as luma only — the pipeline is grayscale, so the
+ * chroma planes are ignored even though the wire format still carries them.
+ *
+ * Pipeline: grayscale -> bilateral denoise -> three candidate strategies
+ * (adaptive Canny + close, adaptive-threshold silhouette, Triangle
+ * auto-threshold) pooled through convexHull and an approxPolyDP epsilon
+ * sweep, then scored by rectangularity and right-angle-ness. Corners are
  * ordered TL/TR/BR/BL by x+y / y-x extremes.
  */
 class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
@@ -103,14 +104,12 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
                     try {
                         val corners = when (format) {
                             "yuv420" -> {
+                                // Luma only: the pipeline is grayscale, so the
+                                // chroma planes are never read (see detectFromYuv).
                                 val y = call.argument<ByteArray>("yBytes")
-                                val u = call.argument<ByteArray>("uBytes")
-                                val v = call.argument<ByteArray>("vBytes")
                                 val yStride = call.argument<Int>("yRowStride") ?: width
-                                val uvStride = call.argument<Int>("uvRowStride") ?: width
-                                val uvPixel = call.argument<Int>("uvPixelStride") ?: 1
-                                if (y == null || u == null || v == null) null
-                                else detectFromYuv(y, u, v, width, height, yStride, uvStride, uvPixel, rotation, sens)
+                                if (y == null) null
+                                else detectFromYuv(y, width, height, yStride, rotation, sens)
                             }
                             else -> {
                                 val bytes = call.argument<ByteArray>("bytes")
@@ -192,41 +191,72 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
 
     // --- Realtime frame paths ---
 
+    /**
+     * Detects in a YUV420 frame by reading its Y (luma) plane and nothing else.
+     *
+     * The whole detection pipeline is grayscale — [detectBestQuad]'s first act
+     * used to be a BGR2GRAY conversion — and a YUV420 frame's Y plane already
+     * IS that grayscale. So building NV21 and running `cvtColor(YUV2BGR_NV21)`
+     * spent, per 1080p frame, a ~3 MB interleaved buffer plus a ~6 MB
+     * three-channel Mat manufacturing colour the very next step threw away.
+     * Reading Y straight into a single-channel Mat costs one `width * height`
+     * copy, and none at all when the plane is already tightly packed.
+     *
+     * Dropping the colour conversion also retires the emulator special case:
+     * that branch existed only because the emulator could crash inside
+     * OpenCV's parallel colour conversion, and this path performs none.
+     *
+     * The chroma planes are not read at all. iOS never sent them (it streams
+     * BGRA), and now neither platform consumes them.
+     */
     private fun detectFromYuv(
-        y: ByteArray, u: ByteArray, v: ByteArray, width: Int, height: Int,
-        yStride: Int, uvStride: Int, uvPixel: Int, rotation: Int, sens: Sensitivity,
+        y: ByteArray, width: Int, height: Int,
+        yStride: Int, rotation: Int, sens: Sensitivity,
     ): Map<String, Double>? {
-        val nv21 = toNv21(y, u, v, width, height, yStride, uvStride, uvPixel)
-        if (emulatorMode) {
-            val bmp = nv21ToBitmap(nv21, width, height) ?: return null
-            val mat = Mat()
-            Utils.bitmapToMat(bmp, mat)
-            bmp.recycle()
-            return detectAndNormalize(mat, rotation, sens)
-        }
-        val yuvMat = Mat(height + height / 2, width, CvType.CV_8UC1)
-        yuvMat.put(0, 0, nv21)
-        var bgr = Mat()
-        Imgproc.cvtColor(yuvMat, bgr, Imgproc.COLOR_YUV2BGR_NV21)
-        yuvMat.release()
+        var gray = yPlaneToGrayMat(y, width, height, yStride) ?: return null
 
-        // Downscale the BGR Mat during conversion so a full-res (e.g. 1080p
-        // ~6MB) Mat is never kept for the per-frame edge pipeline. Corners come
-        // out normalized, so the source scale doesn't change the result — this
-        // is the main lever for per-frame Large-Object-Space GC pressure.
+        // Downscale before the edge pipeline so a full-res Mat is never kept
+        // per frame. Corners come out normalized, so the source scale doesn't
+        // change the result — this is the main lever for per-frame
+        // Large-Object-Space GC pressure.
         val longSide = maxOf(width, height)
         if (longSide > DETECTION_MAX_LONG_SIDE) {
             val scale = DETECTION_MAX_LONG_SIDE.toDouble() / longSide
             val small = Mat()
             Imgproc.resize(
-                bgr, small,
+                gray, small,
                 Size(width * scale, height * scale),
                 0.0, 0.0, Imgproc.INTER_AREA,
             )
-            bgr.release()
-            bgr = small
+            gray.release()
+            gray = small
         }
-        return detectAndNormalize(bgr, rotation, sens)
+        return detectAndNormalize(gray, rotation, sens)
+    }
+
+    /**
+     * Copies the frame's Y plane into a single-channel Mat, honouring
+     * [yStride] (a camera's rows are often padded past [width]). Returns null
+     * when the plane is shorter than [width] x [height] implies — a malformed
+     * frame is a dropped frame, not a crash.
+     */
+    private fun yPlaneToGrayMat(y: ByteArray, width: Int, height: Int, yStride: Int): Mat? {
+        val stride = if (yStride > 0) yStride else width
+        if (stride < width || y.size < (height - 1).toLong() * stride + width) return null
+
+        val mat = Mat(height, width, CvType.CV_8UC1)
+        if (stride == width) {
+            // Tightly packed: hand the plane over as-is.
+            mat.put(0, 0, y)
+            return mat
+        }
+        // Strided: drop each row's padding into a packed buffer first.
+        val packed = ByteArray(width * height)
+        for (row in 0 until height) {
+            System.arraycopy(y, row * stride, packed, row * width, width)
+        }
+        mat.put(0, 0, packed)
+        return mat
     }
 
     private fun detectFromBgra(
@@ -346,17 +376,22 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
         // outline-bloat and shape-shift of the old bare 9x9 dilate.
         val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(5.0, 5.0))
         try {
-            // The input may be 3-channel (BGR, from the YUV path) or 4-channel
-            // (RGBA, from bitmapToMat / the BGRA frame path). Pick the matching
-            // grayscale conversion by channel count so a 4-channel image doesn't
-            // hit BGR2GRAY's `scn == 3` assertion (which would throw and break
-            // the file/BGRA paths entirely).
-            val grayCode = if (src.channels() >= 4) {
-                Imgproc.COLOR_RGBA2GRAY
+            // The input arrives with a different channel count per path:
+            // 1 (luma, from the YUV frame path — already grayscale, nothing to
+            // convert), 3 (BGR), or 4 (RGBA, from bitmapToMat / the BGRA frame
+            // path). Pick by channel count so a 4-channel image doesn't hit
+            // BGR2GRAY's `scn == 3` assertion, and so a 1-channel image isn't
+            // fed to a converter that would reject it outright.
+            if (src.channels() == 1) {
+                src.copyTo(gray)
             } else {
-                Imgproc.COLOR_BGR2GRAY
+                val grayCode = if (src.channels() >= 4) {
+                    Imgproc.COLOR_RGBA2GRAY
+                } else {
+                    Imgproc.COLOR_BGR2GRAY
+                }
+                Imgproc.cvtColor(src, gray, grayCode)
             }
-            Imgproc.cvtColor(src, gray, grayCode)
 
             // Edge-preserving denoise: bilateral smooths flat areas (paper, desk)
             // while keeping the faint page boundary — better recall on soft edges
@@ -557,38 +592,7 @@ class DocumentScanPlugin : FlutterPlugin, MethodCallHandler {
         return listOf(tl, tr, br, bl)
     }
 
-    // --- YUV / Bitmap helpers ---
-
-    private fun toNv21(
-        y: ByteArray, u: ByteArray, v: ByteArray, width: Int, height: Int,
-        yStride: Int, uvStride: Int, uvPixel: Int,
-    ): ByteArray {
-        val nv21 = ByteArray(width * height + width * (height / 2))
-        var pos = 0
-        if (yStride == width) {
-            System.arraycopy(y, 0, nv21, 0, width * height); pos = width * height
-        } else {
-            for (row in 0 until height) { System.arraycopy(y, row * yStride, nv21, pos, width); pos += width }
-        }
-        val uvH = height / 2; val uvW = width / 2
-        for (row in 0 until uvH) for (col in 0 until uvW) {
-            val i = row * uvStride + col * uvPixel
-            // Guard against OEM plane layouts whose stride/pixelStride don't
-            // match the reported dims (e.g. a single interleaved U/V plane) —
-            // read a neutral 128 (gray chroma) rather than crashing out of range.
-            nv21[pos++] = if (i < v.size) v[i] else 128.toByte()
-            nv21[pos++] = if (i < u.size) u[i] else 128.toByte()
-        }
-        return nv21
-    }
-
-    private fun nv21ToBitmap(nv21: ByteArray, width: Int, height: Int): Bitmap? {
-        val yuv = YuvImage(nv21, ImageFormat.NV21, width, height, null)
-        val out = ByteArrayOutputStream()
-        if (!yuv.compressToJpeg(Rect(0, 0, width, height), 85, out)) { out.close(); return null }
-        val bytes = out.toByteArray(); out.close()
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-    }
+    // --- Bitmap helpers ---
 
     private fun decodeBitmapWithOrientation(file: File): Bitmap? {
         val path = file.absolutePath
