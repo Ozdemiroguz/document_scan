@@ -21,9 +21,9 @@ void main() {
     responder = (_) => null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      calls.add(call);
-      return responder(call);
-    });
+          calls.add(call);
+          return responder(call);
+        });
     detector = DocumentDetector(channel: channel);
   });
 
@@ -34,11 +34,15 @@ void main() {
 
   // A well-formed native reply (unordered points — detector must order them).
   Map<String, dynamic> nativeCorners() => {
-        'topLeftX': 0.1, 'topLeftY': 0.1,
-        'topRightX': 0.9, 'topRightY': 0.1,
-        'bottomRightX': 0.9, 'bottomRightY': 0.9,
-        'bottomLeftX': 0.1, 'bottomLeftY': 0.9,
-      };
+    'topLeftX': 0.1,
+    'topLeftY': 0.1,
+    'topRightX': 0.9,
+    'topRightY': 0.1,
+    'bottomRightX': 0.9,
+    'bottomRightY': 0.9,
+    'bottomLeftX': 0.1,
+    'bottomLeftY': 0.9,
+  };
 
   group('detect() method + argument encoding', () {
     test('file input calls detectFile with the path', () async {
@@ -127,11 +131,11 @@ void main() {
     test('orders the native reply into TL/TR/BR/BL', () async {
       // Reply with points in a scrambled order; the detector must normalize.
       responder = (_) => {
-            'topLeftX': 0.9, 'topLeftY': 0.9, // actually BR
-            'topRightX': 0.1, 'topRightY': 0.1, // actually TL
-            'bottomRightX': 0.1, 'bottomRightY': 0.9, // actually BL
-            'bottomLeftX': 0.9, 'bottomLeftY': 0.1, // actually TR
-          };
+        'topLeftX': 0.9, 'topLeftY': 0.9, // actually BR
+        'topRightX': 0.1, 'topRightY': 0.1, // actually TL
+        'bottomRightX': 0.1, 'bottomRightY': 0.9, // actually BL
+        'bottomLeftX': 0.9, 'bottomLeftY': 0.1, // actually TR
+      };
       final c = await detector.detect(ScanInput.file('/x.jpg'));
 
       expect(c, isNotNull);
@@ -149,29 +153,32 @@ void main() {
       // A reply missing a coordinate key must degrade to "no detection", not
       // throw a cast error out of detect().
       responder = (_) => {
-            'topLeftX': 0.1, 'topLeftY': 0.1,
-            'topRightX': 0.9, // topRightY missing
-            'bottomRightX': 0.9, 'bottomRightY': 0.9,
-            'bottomLeftX': 0.1, 'bottomLeftY': 0.9,
-          };
+        'topLeftX': 0.1, 'topLeftY': 0.1,
+        'topRightX': 0.9, // topRightY missing
+        'bottomRightX': 0.9, 'bottomRightY': 0.9,
+        'bottomLeftX': 0.1, 'bottomLeftY': 0.9,
+      };
       final c = await detector.detect(ScanInput.file('/x.jpg'));
       expect(c, isNull);
     });
 
     test('returns null when a coordinate is a non-number', () async {
       responder = (_) => {
-            ...nativeCorners(),
-            'topLeftX': 'oops', // wrong type
-          };
+        ...nativeCorners(),
+        'topLeftX': 'oops', // wrong type
+      };
       final c = await detector.detect(ScanInput.file('/x.jpg'));
       expect(c, isNull);
     });
 
-    test('prefers the native confidence when the platform supplies one', () async {
-      responder = (_) => {...nativeCorners(), 'confidence': 0.42};
-      final c = await detector.detect(ScanInput.file('/x.jpg'));
-      expect(c!.confidence, closeTo(0.42, 1e-9));
-    });
+    test(
+      'prefers the native confidence when the platform supplies one',
+      () async {
+        responder = (_) => {...nativeCorners(), 'confidence': 0.42};
+        final c = await detector.detect(ScanInput.file('/x.jpg'));
+        expect(c!.confidence, closeTo(0.42, 1e-9));
+      },
+    );
 
     test('derives a geometric confidence when native omits it', () async {
       // No 'confidence' key (Android/OpenCV) → detector fills it in from geometry.
@@ -198,10 +205,10 @@ void main() {
       var nativeCalls = 0;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        nativeCalls++;
-        await gate.future; // hold the first call open
-        return nativeCorners();
-      });
+            nativeCalls++;
+            await gate.future; // hold the first call open
+            return nativeCorners();
+          });
 
       final frames = StreamController<ScanInput>();
       final events = <DetectionEvent>[];
@@ -232,10 +239,9 @@ void main() {
       final frames = StreamController<ScanInput>();
       final events = <DetectionEvent>[];
       final errors = <Object>[];
-      final sub = detector.detectStream(frames.stream).listen(
-            events.add,
-            onError: errors.add,
-          );
+      final sub = detector
+          .detectStream(frames.stream)
+          .listen(events.add, onError: errors.add);
 
       frames.add(ScanInput.file('/1.jpg'));
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -268,49 +274,63 @@ void main() {
       await frames.close();
     });
 
-    test('minInterval drops frames that arrive too soon, runs ones that dont',
-        () async {
-      // Drive time by hand so the throttle is deterministic (no sleeping).
-      var now = DateTime(2026);
-      final throttled = DocumentDetector(channel: channel, clock: () => now);
-      responder = (_) => nativeCorners();
+    test(
+      'minInterval drops frames that arrive too soon, runs ones that dont',
+      () async {
+        // Drive time by hand so the throttle is deterministic (no sleeping).
+        var now = DateTime(2026);
+        final throttled = DocumentDetector(channel: channel, clock: () => now);
+        responder = (_) => nativeCorners();
 
-      final frames = StreamController<ScanInput>();
-      final events = <DetectionEvent>[];
-      final sub = throttled
-          .detectStream(frames.stream,
-              minInterval: const Duration(milliseconds: 100))
-          .listen(events.add);
+        final frames = StreamController<ScanInput>();
+        final events = <DetectionEvent>[];
+        final sub = throttled
+            .detectStream(
+              frames.stream,
+              minInterval: const Duration(milliseconds: 100),
+            )
+            .listen(events.add);
 
-      // t=0: first frame runs (no previous timestamp to gate against).
-      frames.add(ScanInput.file('/1.jpg'));
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      // t=50ms: inside the 100ms window → dropped as DetectionSkipped.
-      now = now.add(const Duration(milliseconds: 50));
-      frames.add(ScanInput.file('/2.jpg'));
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      // t=150ms: past the window → runs.
-      now = now.add(const Duration(milliseconds: 100));
-      frames.add(ScanInput.file('/3.jpg'));
-      await Future<void>.delayed(const Duration(milliseconds: 5));
+        // t=0: first frame runs (no previous timestamp to gate against).
+        frames.add(ScanInput.file('/1.jpg'));
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        // t=50ms: inside the 100ms window → dropped as DetectionSkipped.
+        now = now.add(const Duration(milliseconds: 50));
+        frames.add(ScanInput.file('/2.jpg'));
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        // t=150ms: past the window → runs.
+        now = now.add(const Duration(milliseconds: 100));
+        frames.add(ScanInput.file('/3.jpg'));
+        await Future<void>.delayed(const Duration(milliseconds: 5));
 
-      expect(events.whereType<DetectionSuccess>(), hasLength(2),
-          reason: 'frames 1 and 3 ran');
-      expect(events.whereType<DetectionSkipped>(), hasLength(1),
-          reason: 'frame 2 was rate-limited');
+        expect(
+          events.whereType<DetectionSuccess>(),
+          hasLength(2),
+          reason: 'frames 1 and 3 ran',
+        );
+        expect(
+          events.whereType<DetectionSkipped>(),
+          hasLength(1),
+          reason: 'frame 2 was rate-limited',
+        );
 
-      await sub.cancel();
-      await frames.close();
-    });
+        await sub.cancel();
+        await frames.close();
+      },
+    );
 
     test('closes when the source stream is done', () async {
       responder = (_) => nativeCorners();
       final frames = StreamController<ScanInput>();
       var closed = false;
-      final sub =
-          detector.detectStream(frames.stream).listen((_) {}, onDone: () {
-        closed = true;
-      });
+      final sub = detector
+          .detectStream(frames.stream)
+          .listen(
+            (_) {},
+            onDone: () {
+              closed = true;
+            },
+          );
 
       await frames.close();
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -319,42 +339,47 @@ void main() {
       await sub.cancel();
     });
 
-    test('closing the source mid-detection does not throw (clean teardown)',
-        () async {
-      // Hold the native call open so the frame is still in flight when the
-      // source stream completes — the realtime teardown case (stop scanning /
-      // navigate away while a frame is being processed). The in-flight frame
-      // must settle without adding to an already-closed controller.
-      final gate = Completer<void>();
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (call) async {
-        await gate.future;
-        return nativeCorners();
-      });
+    test(
+      'closing the source mid-detection does not throw (clean teardown)',
+      () async {
+        // Hold the native call open so the frame is still in flight when the
+        // source stream completes — the realtime teardown case (stop scanning /
+        // navigate away while a frame is being processed). The in-flight frame
+        // must settle without adding to an already-closed controller.
+        final gate = Completer<void>();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              await gate.future;
+              return nativeCorners();
+            });
 
-      final frames = StreamController<ScanInput>();
-      final events = <DetectionEvent>[];
-      final errors = <Object>[];
-      Object? zoneError;
+        final frames = StreamController<ScanInput>();
+        final events = <DetectionEvent>[];
+        final errors = <Object>[];
+        Object? zoneError;
 
-      await runZonedGuarded(() async {
-        final sub = detector.detectStream(frames.stream).listen(
-              events.add,
-              onError: errors.add,
-            );
-        frames.add(ScanInput.file('/1.jpg'));
-        await Future<void>.delayed(Duration.zero); // let detect() start
-        await frames.close(); // onDone fires while the frame is in flight
-        gate.complete(); // detect() resolves — must not add-after-close
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        await sub.cancel();
-      }, (e, _) => zoneError = e);
+        await runZonedGuarded(() async {
+          final sub = detector
+              .detectStream(frames.stream)
+              .listen(events.add, onError: errors.add);
+          frames.add(ScanInput.file('/1.jpg'));
+          await Future<void>.delayed(Duration.zero); // let detect() start
+          await frames.close(); // onDone fires while the frame is in flight
+          gate.complete(); // detect() resolves — must not add-after-close
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await sub.cancel();
+        }, (e, _) => zoneError = e);
 
-      expect(zoneError, isNull, reason: 'no add-after-close / unhandled error');
-      expect(errors, isEmpty);
-      // The in-flight frame still produced its event before the clean close.
-      expect(events, hasLength(1));
-      expect(events.single, isA<DetectionSuccess>());
-    });
+        expect(
+          zoneError,
+          isNull,
+          reason: 'no add-after-close / unhandled error',
+        );
+        expect(errors, isEmpty);
+        // The in-flight frame still produced its event before the clean close.
+        expect(events, hasLength(1));
+        expect(events.single, isA<DetectionSuccess>());
+      },
+    );
   });
 }

@@ -21,9 +21,11 @@ import 'detection_event.dart';
 /// [DetectionError] carrying the failure) for that frame, rather than throwing.
 class DocumentDetector {
   /// Creates a detector. [channel] is injectable for tests.
-  DocumentDetector({MethodChannel? channel, @visibleForTesting DateTime Function()? clock})
-    : _channel = channel ?? const MethodChannel(_channelName),
-      _now = clock ?? DateTime.now;
+  DocumentDetector({
+    MethodChannel? channel,
+    @visibleForTesting DateTime Function()? clock,
+  }) : _channel = channel ?? const MethodChannel(_channelName),
+       _now = clock ?? DateTime.now;
 
   static const _channelName = 'com.oguzhan.document_scan/detector';
 
@@ -57,7 +59,10 @@ class DocumentDetector {
   }) async {
     final args = _encode(input, sensitivity);
     final method = input is FileScanInput ? 'detectFile' : 'detectFrame';
-    final result = await _channel.invokeMapMethod<String, dynamic>(method, args);
+    final result = await _channel.invokeMapMethod<String, dynamic>(
+      method,
+      args,
+    );
     return _decode(result);
   }
 

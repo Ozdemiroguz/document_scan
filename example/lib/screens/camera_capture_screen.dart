@@ -166,10 +166,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                     children: [
                       CircularProgressIndicator(),
                       SizedBox(height: 12),
-                      Text(
-                        'Scanning…',
-                        style: TextStyle(color: Colors.white),
-                      ),
+                      Text('Scanning…', style: TextStyle(color: Colors.white)),
                     ],
                   ),
                 ),

@@ -2,11 +2,11 @@ import 'package:document_scan/document_scan.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 DocumentCorners _square(double offset) => DocumentCorners(
-      topLeft: (x: 0.1 + offset, y: 0.1 + offset),
-      topRight: (x: 0.9 + offset, y: 0.1 + offset),
-      bottomRight: (x: 0.9 + offset, y: 0.9 + offset),
-      bottomLeft: (x: 0.1 + offset, y: 0.9 + offset),
-    );
+  topLeft: (x: 0.1 + offset, y: 0.1 + offset),
+  topRight: (x: 0.9 + offset, y: 0.1 + offset),
+  bottomRight: (x: 0.9 + offset, y: 0.9 + offset),
+  bottomLeft: (x: 0.1 + offset, y: 0.9 + offset),
+);
 
 void main() {
   group('CornerStabilizer', () {
@@ -40,8 +40,7 @@ void main() {
       expect(s.add(jumped), jumped);
     });
 
-    test('null (no document) resets, so the next document does not slide in',
-        () {
+    test('null (no document) resets, so the next document does not slide in', () {
       final s = CornerStabilizer(smoothing: 0.5, resetDistance: 0.2);
       s.add(_square(0));
       expect(s.add(null), isNull); // document left

@@ -20,10 +20,8 @@ enum ScanImageCodec {
 /// (`output: ScanOutputFormat.png`). For a non-default JPEG quality, use
 /// [ScanOutputFormat.jpegAt].
 class ScanOutputFormat {
-  const ScanOutputFormat({
-    this.codec = ScanImageCodec.png,
-    this.quality = 90,
-  }) : assert(quality >= 1 && quality <= 100, 'quality is 1..100');
+  const ScanOutputFormat({this.codec = ScanImageCodec.png, this.quality = 90})
+    : assert(quality >= 1 && quality <= 100, 'quality is 1..100');
 
   /// PNG output (lossless). The default.
   static const png = ScanOutputFormat();
@@ -38,7 +36,7 @@ class ScanOutputFormat {
   /// JPEG output at a specific [quality] (1..100). Use the [jpeg] constant for
   /// the default quality.
   const ScanOutputFormat.jpegAt(int quality)
-      : this(codec: ScanImageCodec.jpeg, quality: quality);
+    : this(codec: ScanImageCodec.jpeg, quality: quality);
 
   /// The codec to encode with.
   final ScanImageCodec codec;

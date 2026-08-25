@@ -105,7 +105,8 @@ void main() {
       expect(
         isMostlyRed(cropped),
         isTrue,
-        reason: 'top-half corners must select the oriented red band; a '
+        reason:
+            'top-half corners must select the oriented red band; a '
             'raw-sensor crop of these same corners would be ~half red / half '
             'white, so "mostly red" fails if orientation is not applied before '
             'the warp',

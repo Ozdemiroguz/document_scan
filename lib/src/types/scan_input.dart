@@ -21,8 +21,11 @@ sealed class ScanInput {
   factory ScanInput.file(String path) = FileScanInput;
 
   /// Already-decoded image bytes plus their dimensions.
-  factory ScanInput.bytes(Uint8List bytes, {required int width, required int height}) =
-      BytesScanInput;
+  factory ScanInput.bytes(
+    Uint8List bytes, {
+    required int width,
+    required int height,
+  }) = BytesScanInput;
 
   /// A raw BGRA camera frame (the iOS camera default). [bytes] is the single
   /// interleaved BGRA plane; [bytesPerRow] is its row stride (0 assumes
@@ -117,13 +120,13 @@ final class CameraFrameScanInput extends ScanInput {
     required Uint8List this.bytes,
     this.rotation = 0,
     this.bytesPerRow = 0,
-  })  : format = ScanImageFormat.bgra8888,
-        yBytes = null,
-        uBytes = null,
-        vBytes = null,
-        yRowStride = 0,
-        uvRowStride = 0,
-        uvPixelStride = 1;
+  }) : format = ScanImageFormat.bgra8888,
+       yBytes = null,
+       uBytes = null,
+       vBytes = null,
+       yRowStride = 0,
+       uvRowStride = 0,
+       uvPixelStride = 1;
 
   /// A YUV 4:2:0 frame: the three planes are required.
   const CameraFrameScanInput.yuv({
@@ -136,9 +139,9 @@ final class CameraFrameScanInput extends ScanInput {
     this.yRowStride = 0,
     this.uvRowStride = 0,
     this.uvPixelStride = 1,
-  })  : format = ScanImageFormat.yuv420,
-        bytes = null,
-        bytesPerRow = 0;
+  }) : format = ScanImageFormat.yuv420,
+       bytes = null,
+       bytesPerRow = 0;
 
   /// Frame width in pixels.
   final int width;

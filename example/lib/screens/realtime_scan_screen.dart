@@ -251,7 +251,9 @@ class _RealtimeScanScreenState extends State<RealtimeScanScreen>
     // sensorOrientation is the clockwise rotation (degrees) to bring the frame
     // upright. On Android (YUV420) the native side needs it; on iOS the BGRA
     // path is already preview-oriented, so 0 is correct there.
-    final rotation = Platform.isIOS ? 0 : controller.description.sensorOrientation;
+    final rotation = Platform.isIOS
+        ? 0
+        : controller.description.sensorOrientation;
 
     await controller.startImageStream((image) {
       // Drop frames while the controller/stream is torn down.

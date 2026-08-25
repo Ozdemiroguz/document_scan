@@ -31,8 +31,8 @@ class CornerStabilizer {
   /// (moved fast, swapped, or re-detected elsewhere) and the average snaps to
   /// the new position instead of sliding across the frame.
   CornerStabilizer({this.smoothing = 0.5, this.resetDistance = 0.2})
-      : assert(smoothing > 0 && smoothing <= 1),
-        assert(resetDistance > 0);
+    : assert(smoothing > 0 && smoothing <= 1),
+      assert(resetDistance > 0);
 
   final double smoothing;
   final double resetDistance;
@@ -56,10 +56,8 @@ class CornerStabilizer {
       return raw;
     }
 
-    ScanPoint lerp(ScanPoint a, ScanPoint b) => (
-          x: a.x + (b.x - a.x) * smoothing,
-          y: a.y + (b.y - a.y) * smoothing,
-        );
+    ScanPoint lerp(ScanPoint a, ScanPoint b) =>
+        (x: a.x + (b.x - a.x) * smoothing, y: a.y + (b.y - a.y) * smoothing);
 
     final smoothed = DocumentCorners(
       topLeft: lerp(prev.topLeft, raw.topLeft),

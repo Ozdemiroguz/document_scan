@@ -126,7 +126,8 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
       // Show the full error in a persistent, readable dialog (a SnackBar
       // vanishes too fast to read). The type + message tell us what failed —
       // MissingPluginException, a PlatformException, a file error, etc.
-      final detail = 'Type: ${e.runtimeType}\n\n$e\n\n${st.toString().split('\n').take(4).join('\n')}';
+      final detail =
+          'Type: ${e.runtimeType}\n\n$e\n\n${st.toString().split('\n').take(4).join('\n')}';
       setState(() {
         _busy = false;
         _status = 'Export failed: ${e.runtimeType}';
@@ -135,9 +136,7 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Export failed'),
-          content: SingleChildScrollView(
-            child: SelectableText(detail),
-          ),
+          content: SingleChildScrollView(child: SelectableText(detail)),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -153,7 +152,8 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
   /// button's frame. Falls back to the screen centre if the button isn't laid
   /// out (so the share never throws for a missing origin).
   Rect _shareOrigin() {
-    final box = _exportButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final box =
+        _exportButtonKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && box.hasSize) {
       final topLeft = box.localToGlobal(Offset.zero);
       return topLeft & box.size;
@@ -241,8 +241,7 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
                 ? null
                 : () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) =>
-                          ScanResultScreen(document: page.document),
+                      builder: (_) => ScanResultScreen(document: page.document),
                     ),
                   ),
             trailing: IconButton(

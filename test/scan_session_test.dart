@@ -4,12 +4,12 @@ import 'package:document_scan/document_scan.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 ScannedPage page(int tag) => ScannedPage(
-      document: ScannedDocument(
-        bytes: Uint8List.fromList([tag]),
-        width: tag,
-        height: tag,
-      ),
-    );
+  document: ScannedDocument(
+    bytes: Uint8List.fromList([tag]),
+    width: tag,
+    height: tag,
+  ),
+);
 
 /// Reads back each page's width as a stable identity tag.
 List<int> tags(ScanSession s) => s.pages.map((p) => p.document.width).toList();
@@ -58,7 +58,11 @@ void main() {
     });
 
     test('move middle forward one', () {
-      expect(tags(base.reorder(1, 2)), [1, 2, 3]); // no visible change (adjacent)
+      expect(tags(base.reorder(1, 2)), [
+        1,
+        2,
+        3,
+      ]); // no visible change (adjacent)
     });
 
     test('same index is a no-op', () {
