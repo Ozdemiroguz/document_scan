@@ -24,15 +24,18 @@ void main() {
   const channel = MethodChannel('com.oguzhan.document_scan/detector');
   late int detectCalls;
   late Object? detectReply;
+  late Map<Object?, Object?> lastArgs;
 
   setUp(() {
     detectCalls = 0;
     detectReply = null;
+    lastArgs = const {};
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      detectCalls++;
-      return detectReply;
-    });
+          detectCalls++;
+          lastArgs = (call.arguments as Map).cast<Object?, Object?>();
+          return detectReply;
+        });
   });
 
   tearDown(() {
@@ -44,11 +47,15 @@ void main() {
       DocumentScanner(detector: DocumentDetector(channel: channel));
 
   Map<String, dynamic> nativeCorners() => {
-        'topLeftX': 0.0, 'topLeftY': 0.0,
-        'topRightX': 1.0, 'topRightY': 0.0,
-        'bottomRightX': 1.0, 'bottomRightY': 1.0,
-        'bottomLeftX': 0.0, 'bottomLeftY': 1.0,
-      };
+    'topLeftX': 0.0,
+    'topLeftY': 0.0,
+    'topRightX': 1.0,
+    'topRightY': 0.0,
+    'bottomRightX': 1.0,
+    'bottomRightY': 1.0,
+    'bottomLeftX': 0.0,
+    'bottomLeftY': 1.0,
+  };
 
   group('automatic mode (no corners given)', () {
     test('detects then crops, returning a document', () async {
@@ -95,6 +102,23 @@ void main() {
       expect(detectCalls, 1);
       expect(corners, isNotNull);
     });
+
+    test('defaults to balanced, not scan()\'s lenient', () async {
+      detectReply = nativeCorners();
+      await scanner().detectCorners(
+        ScanInput.bytes(_png(100, 100), width: 100, height: 100),
+      );
+      expect(lastArgs['sensitivity'], 'balanced');
+    });
+
+    test('forwards an explicit sensitivity to the engine', () async {
+      detectReply = nativeCorners();
+      await scanner().detectCorners(
+        ScanInput.bytes(_png(100, 100), width: 100, height: 100),
+        sensitivity: DetectionSensitivity.lenient,
+      );
+      expect(lastArgs['sensitivity'], 'lenient');
+    });
   });
 
   test('honors the output format', () async {
@@ -108,15 +132,17 @@ void main() {
   });
 
   group('background execution (façade default is true)', () {
-    test('the default (background: true) crops on an isolate without crashing',
-        () async {
-      final out = await scanner().scan(
-        ScanInput.bytes(_png(160, 120), width: 160, height: 120),
-        corners: _fullFrame, // corners given → crop runs in the isolate
-      );
-      expect(out, isNotNull);
-      expect(out!.bytes, isNotEmpty);
-    });
+    test(
+      'the default (background: true) crops on an isolate without crashing',
+      () async {
+        final out = await scanner().scan(
+          ScanInput.bytes(_png(160, 120), width: 160, height: 120),
+          corners: _fullFrame, // corners given → crop runs in the isolate
+        );
+        expect(out, isNotNull);
+        expect(out!.bytes, isNotEmpty);
+      },
+    );
 
     test('background: true and false produce identical bytes', () async {
       final input = ScanInput.bytes(_png(160, 120), width: 160, height: 120);

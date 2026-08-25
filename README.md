@@ -323,9 +323,9 @@ applies these pure-Dart filters after cropping:
 | `none`         | The cropped color image, untouched.          |
 | `grayscale`    | Desaturated.                                 |
 | `enhance`      | Grayscale + contrast + normalize — the clean, readable "scanned" default. |
-| `blackWhite`   | High-contrast "scanned paper" look.          |
+| `blackWhite`   | Hard black & white — one global Otsu threshold. Crisp on an evenly-lit page. |
 | `sharpen`      | Crisper text edges.                          |
-| `magicColor`   | Brightened, saturated color for photos/receipts. |
+| `magicColor`   | Hard black & white, thresholded *per region* — survives shadows and uneven light, where `blackWhite` blocks up. |
 
 Detect and crop once, then swap filters cheaply — only the filter re-runs, not
 detection — via `DocumentProcessor`:

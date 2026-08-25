@@ -24,7 +24,10 @@ void main() {
     });
 
     test('low confidence -> detecting, never ready', () {
-      final a = AutoCaptureAnalyzer(requiredSteadyFrames: 2, minConfidence: 0.6);
+      final a = AutoCaptureAnalyzer(
+        requiredSteadyFrames: 2,
+        minConfidence: 0.6,
+      );
       var last = AutoCaptureStatus.searching;
       for (var i = 0; i < 5; i++) {
         last = a.add(goodDoc(confidence: 0.3)).status;
@@ -134,6 +137,43 @@ void main() {
       // ...and the next good frame keeps counting up rather than restarting.
       final next = a.addEvent(DetectionSuccess(goodDoc()));
       expect(next.steadyFrames, 2);
+    });
+
+    test('DetectionSkipped after ready does not re-fire the capture', () {
+      // The latch exists so one hold produces one capture. minInterval
+      // throttling makes DetectionSkipped the *common* event, so echoing the
+      // latched `ready` back on a skip would turn a single steady hold into a
+      // burst of captures for anyone writing `if (s.shouldCapture) capture()`.
+      final a = AutoCaptureAnalyzer(requiredSteadyFrames: 2);
+      a.addEvent(DetectionSuccess(goodDoc()));
+      expect(a.addEvent(DetectionSuccess(goodDoc())).shouldCapture, isTrue);
+
+      for (var i = 0; i < 5; i++) {
+        final skipped = a.addEvent(const DetectionSkipped());
+        expect(skipped.shouldCapture, isFalse);
+        expect(skipped.status, AutoCaptureStatus.detecting);
+        // …while still holding the accumulated steadiness, not resetting it.
+        expect(skipped.steadyFrames, greaterThan(0));
+      }
+      // A further good frame stays latched too — still one capture per hold.
+      expect(a.addEvent(DetectionSuccess(goodDoc())).shouldCapture, isFalse);
+    });
+
+    test('DetectionSkipped with nothing seen yet reports searching', () {
+      final a = AutoCaptureAnalyzer(requiredSteadyFrames: 2);
+      final s = a.addEvent(const DetectionSkipped());
+      expect(s.status, AutoCaptureStatus.searching);
+      expect(s.steadyFrames, 0);
+    });
+
+    test('after the document leaves, a new hold can fire again', () {
+      final a = AutoCaptureAnalyzer(requiredSteadyFrames: 2);
+      a.addEvent(DetectionSuccess(goodDoc()));
+      expect(a.addEvent(DetectionSuccess(goodDoc())).shouldCapture, isTrue);
+      a.addEvent(const DetectionSkipped());
+      a.addEvent(const DetectionEmpty()); // document left the frame
+      a.addEvent(DetectionSuccess(goodDoc()));
+      expect(a.addEvent(DetectionSuccess(goodDoc())).shouldCapture, isTrue);
     });
 
     test('DetectionEmpty and DetectionError reset like a null frame', () {

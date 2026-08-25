@@ -97,6 +97,15 @@ class DocumentScanner {
   /// Detects the document corners in [input] without cropping — useful when you
   /// want to show the detected quad for the user to confirm or adjust before
   /// calling [scan] with the (possibly edited) corners.
-  Future<DocumentCorners?> detectCorners(ScanInput input) =>
-      _detector.detect(input);
+  ///
+  /// [sensitivity] matches [DocumentDetector.detect]'s default
+  /// ([DetectionSensitivity.balanced]) rather than [scan]'s `lenient`: this is
+  /// the corners you're about to *show*, so a wrong quad the user has to drag
+  /// back is worse than no quad at all. Pass
+  /// [DetectionSensitivity.lenient] to preview exactly what an unattended
+  /// [scan] of the same input would find.
+  Future<DocumentCorners?> detectCorners(
+    ScanInput input, {
+    DetectionSensitivity sensitivity = DetectionSensitivity.balanced,
+  }) => _detector.detect(input, sensitivity: sensitivity);
 }

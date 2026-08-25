@@ -1,3 +1,48 @@
+## 0.3.0
+
+Three behaviour fixes. No API breaks — every existing call still compiles — but
+scans, filters and auto-capture signals change, so this is a minor bump rather
+than a patch.
+
+- **The perspective correction is now an actual perspective correction.**
+  `DocumentProcessor.crop` mapped the output to the source with a four-corner
+  *bilinear* blend, which pins the corners exactly and gets everything between
+  them wrong: it has no perspective division, so the foreshortening a tilted
+  page introduces was never undone, only stretched out linearly. On a page
+  photographed at ~50°, ten equal bands came back on a ramp — 32 px to 54 px
+  against an ideal 42.5 — bending text spacing and hurting OCR. Replaced with
+  the projective transform (homography) this always should have been; the same
+  scene now recovers 42–43 px bands. Degenerate quads fall back to the old
+  bilinear map, and non-finite coordinates are clamped, so a bad quad still
+  yields a bad crop rather than a crash.
+- **`ScanFilter.blackWhite` now actually binarizes.** It applied a contrast +
+  brightness boost and left a full range of greys behind, contradicting both its
+  own dartdoc and `enhance`'s ("without the hard binarization of
+  `blackWhite`"). It now thresholds every pixel to ink or paper with Otsu's
+  method — one global cut, the fast, crisp choice on an evenly-lit page, with
+  `magicColor` still the per-region option for shadows and gradients. If you
+  were on 0.2.x and *wanted* what `blackWhite` actually did, switch to
+  `ScanFilter.enhance`: grayscale plus a contrast boost, which is the same
+  family of result and keeps its greys.
+- **Auto-capture fires once per hold again.** While latched,
+  `AutoCaptureAnalyzer.addEvent` echoed `ready` back on every `DetectionSkipped`,
+  so `shouldCapture` re-fired on dropped frames — and `detectStream(minInterval:)`
+  makes dropped frames the common case, turning one steady hold into a burst of
+  captures. A skip now reports `detecting` (or `searching` when nothing has been
+  seen) while still holding the accumulated steadiness.
+- `DocumentScanner.detectCorners` takes a `sensitivity` argument, like `scan`,
+  `detect` and `detectStream` already did. It defaults to `balanced` — for
+  corners you're about to *show*, a wrong quad the user must drag back is worse
+  than no quad.
+- Example: the home-menu test asserted five demo rows and has been failing since
+  the camera-capture flow made it six. It now checks the titles themselves, so a
+  new screen that isn't wired into the menu fails loudly instead of silently.
+- Docs: corrected the README filter table (`magicColor` was described as
+  "brightened, saturated color"), the `_orderByAngle` tie-break description, the
+  claim that `DocumentProcessor` "works anywhere Flutter runs" (`background:
+  true` needs `Isolate.run`, which web lacks), and noted that a background crop
+  copies a `BytesScanInput`'s buffer while a `FileScanInput` carries only a path.
+
 ## 0.2.3
 
 - Declare the logo under `screenshots:` so it renders as the pub.dev listing

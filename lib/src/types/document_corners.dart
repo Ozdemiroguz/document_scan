@@ -105,8 +105,11 @@ class DocumentCorners {
   /// Orders four points TL/TR/BR/BL by their angle about the centroid — robust
   /// for any convex quad, including diamonds the sum/diff method collapses.
   ///
-  /// Sorts the points clockwise starting from the top, then rotates the ring so
-  /// it begins at the top-left (the top-most point, ties broken to the left).
+  /// Sorts the points clockwise (in image space, where y grows downward), then
+  /// rotates the ring to begin at the corner nearest the image origin — the
+  /// smallest `x + y`, the same top-left key [fromUnordered] uses. Only the
+  /// starting point is picked that way; the remaining three follow the ring, so
+  /// no two roles can collapse onto one point.
   static DocumentCorners _orderByAngle(
     List<ScanPoint> points, {
     double? confidence,
@@ -116,9 +119,11 @@ class DocumentCorners {
 
     // Clockwise order in image space (y grows downward): sort by atan2 ascending.
     final ring = [...points]
-      ..sort((a, b) =>
-          math.atan2(a.y - cy, a.x - cx).compareTo(
-            math.atan2(b.y - cy, b.x - cx)));
+      ..sort(
+        (a, b) => math
+            .atan2(a.y - cy, a.x - cx)
+            .compareTo(math.atan2(b.y - cy, b.x - cx)),
+      );
 
     // Find the top-left anchor: smallest x+y among the four, then rotate the
     // ring so it starts there and continues clockwise → TL, TR, BR, BL.
@@ -182,8 +187,8 @@ class DocumentCorners {
     final areaScore = (a < 0.02 || a > 0.98)
         ? 0.0
         : (a >= 0.15 && a <= 0.85)
-            ? 1.0
-            : 0.6;
+        ? 1.0
+        : 0.6;
 
     // Aspect ratio from the bounding edges: documents are rectangular-ish, not
     // extreme slivers. Score falls off past ~4:1.
@@ -201,8 +206,8 @@ class DocumentCorners {
     final aspectScore = ratio <= 0
         ? 0.0
         : ratio <= 4
-            ? 1.0
-            : (ratio <= 8 ? 0.5 : 0.2);
+        ? 1.0
+        : (ratio <= 8 ? 0.5 : 0.2);
 
     // Convex already passed → weight it as a solid base, blend the rest.
     return (0.4 + 0.35 * areaScore + 0.25 * aspectScore).clamp(0.0, 1.0);

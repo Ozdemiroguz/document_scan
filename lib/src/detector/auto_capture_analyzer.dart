@@ -78,10 +78,10 @@ class AutoCaptureAnalyzer {
     this.minConfidence = 0,
     this.minArea = 0.10,
     this.maxJitter = 0.08,
-  })  : assert(requiredSteadyFrames > 0),
-        assert(minConfidence >= 0 && minConfidence <= 1),
-        assert(minArea >= 0 && minArea <= 1),
-        assert(maxJitter >= 0);
+  }) : assert(requiredSteadyFrames > 0),
+       assert(minConfidence >= 0 && minConfidence <= 1),
+       assert(minArea >= 0 && minArea <= 1),
+       assert(maxJitter >= 0);
 
   /// Consecutive qualifying+steady frames required before firing `ready`.
   final int requiredSteadyFrames;
@@ -161,21 +161,26 @@ class AutoCaptureAnalyzer {
   /// - [DetectionEmpty] and [DetectionError] are treated as "no document this frame"
   ///   (the countdown resets), the same as feeding `null` to [add].
   /// - [DetectionSkipped] is a backpressure skip, not a detection result, so it
-  ///   holds the current state unchanged rather than resetting the countdown.
+  ///   holds the accumulated steadiness rather than resetting the countdown. It
+  ///   never reports [AutoCaptureStatus.ready]: `ready` is an *edge* — the frame
+  ///   on which the hold completed — and a dropped frame is not that frame.
+  ///   Echoing `ready` back would re-fire [AutoCaptureState.shouldCapture] on
+  ///   every skip, and `minInterval` throttling makes skips the common case, so
+  ///   one hold would trigger a burst of captures. After the latch has fired, a
+  ///   skip reports [AutoCaptureStatus.detecting] (a document is still there,
+  ///   just nothing new to say about it).
   AutoCaptureState addEvent(DetectionEvent event) {
     return switch (event) {
       DetectionSuccess(:final corners) => add(corners),
       DetectionEmpty() || DetectionError() => add(null),
       // A dropped frame carries no information — keep the state we already have.
       DetectionSkipped() => AutoCaptureState(
-          status: _latched
-              ? AutoCaptureStatus.ready
-              : (_steady > 0
-                  ? AutoCaptureStatus.detecting
-                  : AutoCaptureStatus.searching),
-          corners: _last,
-          steadyFrames: _steady,
-        ),
+        status: _steady > 0
+            ? AutoCaptureStatus.detecting
+            : AutoCaptureStatus.searching,
+        corners: _last,
+        steadyFrames: _steady,
+      ),
     };
   }
 

@@ -13,7 +13,11 @@ enum ScanFilter {
   /// [blackWhite] or [magicColor] — a good default for readable, natural scans.
   enhance,
 
-  /// High-contrast black & white — the classic "scanned paper" look.
+  /// Hard black & white — the classic "scanned paper" look. Every pixel is
+  /// forced to ink or paper by a single global threshold picked with Otsu's
+  /// method. Crisp and small on an evenly-lit page; under a shadow or a lighting
+  /// gradient one global cut can't serve the whole image, so reach for
+  /// [magicColor], which thresholds per region.
   blackWhite,
 
   /// Sharpen edges to make text crisper.
