@@ -1,6 +1,6 @@
-## Unreleased
+## 0.3.1
 
-Discovery and positioning only — no API or behaviour changes.
+Discovery and positioning only — no API or behaviour changes, no code changes.
 
 - Retune `topics` for how people actually search. `edge-detection` (nothing in
   this niche claims it) and `camera` and `pdf` (both real capabilities here, and
@@ -14,6 +14,9 @@ Discovery and positioning only — no API or behaviour changes.
   scanners you can style now exist, so "offline" and "no Play Services" no
   longer separate this package. What does: it ships no widgets and has no
   `camera` dependency.
+- Verified against what a fresh install resolves today — `image` 4.10.1 and
+  `pdf` 3.13.1 — including the EXIF-orientation contract the crop depends on.
+  The existing constraints already allowed them; nothing had tested them.
 
 ## 0.3.0
 
