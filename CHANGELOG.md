@@ -1,3 +1,41 @@
+## 0.4.0
+
+A crash fix and a realtime-path optimisation. No API change — every existing
+call still compiles — but the Android frame path does less work per frame, so
+this is a minor bump rather than a patch.
+
+- **Realtime YUV frames stop paying for colour nothing reads.** Detection is a
+  grayscale pipeline, and a YUV420 frame's Y plane already *is* that grayscale,
+  but the frame path was manufacturing colour anyway and discarding it one step
+  later. Per 1080p frame, Android built a ~3 MB NV21 buffer, ran
+  `cvtColor(YUV2BGR_NV21)` into a ~6 MB three-channel Mat, and then
+  `detectBestQuad` immediately converted it back to gray. On top of that, Dart
+  marshalled the U and V planes — roughly `width * height / 2` bytes — across
+  the platform channel every frame, to a native side that never read them (iOS
+  streams BGRA and never touched them at all).
+
+  The Y plane now goes straight into a single-channel Mat, honouring
+  `yRowStride`, and chroma never leaves Dart. `ScanInput.yuvFrame` still takes
+  the three planes your camera hands you — they just stop at the channel
+  boundary, so a future colour-aware detector can use them without breaking
+  anyone.
+
+- **Detection no longer kills the process on an arm64 Android emulator.**
+  Pointing the realtime screen at anything — or running any detection at all —
+  crashed the app with `SIGILL / ILL_ILLOPC` inside OpenCV. The faulting
+  instruction is `cnth`, an SVE instruction: an arm64 AVD running on an Apple
+  Silicon host advertises `sve2` in `/proc/cpuinfo`, but the host CPU does not
+  implement SVE, so the first SVE instruction is illegal. The SVE kernels come
+  from KleidiCV, the ARM HAL that OpenCV bundles, which does its own CPU
+  feature detection — `OPENCV_CPU_DISABLE` cannot reach it and no kill switch
+  exists. Pinning `org.opencv:opencv` to 4.11.0 (KleidiCV 0.3.0, before the
+  SVE2 kernels landed in 0.5.0) is the only lever that works; 4.12, 4.13, 4.14
+  and even 5.0 all still crash.
+
+  Physical devices were never affected — real hardware reports its CPU features
+  honestly — so this changes nothing for shipped apps. It changes everything
+  for anyone evaluating the package on a Mac.
+
 ## 0.3.1
 
 Discovery and positioning only — no API or behaviour changes, no code changes.
