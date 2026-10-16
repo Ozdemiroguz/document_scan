@@ -73,7 +73,7 @@ kotlin {
 
 dependencies {
     // OpenCV — document edge/corner detection (official AAR).
-    implementation("org.opencv:opencv:4.13.0")
+    implementation("org.opencv:opencv:4.11.0")
     // EXIF orientation for still-image decoding.
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 
