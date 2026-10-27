@@ -269,6 +269,26 @@ plenty — the extra pixels don't improve corner-finding and only cost time. Fra
 drops under load are normal and surface as `DetectionSkipped`, not errors; on a
 slower device the effective rate just settles below your `minInterval` cap.
 
+### Long, narrow documents (receipts)
+
+On iOS, Vision drops any rectangle whose short side is less than 0.3 of its long
+side — about 3.3:1 — so the overlay doesn't lock onto a table edge. A till
+receipt is often narrower than that (58 mm × 240 mm is about 0.24; longer ones
+reach 0.1), so it is never found. Lower the gate with `minimumAspectRatio`
+(short side ÷ long side, 0..1); `detect`, `detectStream`, `scan` and
+`detectCorners` all take it:
+
+```dart
+detector.detectStream(
+  myCameraFrames,
+  minimumAspectRatio: 0.1, // accept up to 10:1
+);
+```
+
+Leave it unset to keep the 0.3 default. Android ignores it — its OpenCV
+pipeline has no aspect gate at detection time (see *Platform differences*
+below).
+
 ### Auto-capture
 
 Wire `AutoCaptureAnalyzer` to fire once the document has been held steady and
@@ -393,9 +413,11 @@ gets detected, so it's documented honestly rather than hidden:
   Android uses an OpenCV contour pipeline. The same photo can be found on one
   platform and missed on the other, especially near the edges of detectability.
 - **Aspect / size gating.** iOS applies Vision's own gates at detection
-  (min aspect 0.1, max aspect 1.0, min size 5% of frame), so a very wide
-  landscape document may be filtered out on iOS but not Android, which takes the
-  largest convex quad and scores aspect only afterward.
+  (min aspect 0.3 unless you pass `minimumAspectRatio`, max aspect 1.0, min size
+  8–20% of the frame depending on `sensitivity`), so a very long or wide
+  document may be filtered out on iOS but not Android, which takes the largest
+  convex quad and scores aspect only afterward. `minimumAspectRatio` has no
+  effect on Android.
 - **`confidence` is not comparable across platforms.** On iOS it's Vision's own
   probability; on Android there is no native probability, so it's a geometric
   heuristic (convexity + area + aspect) with a ~0.4 floor. Don't reuse a single

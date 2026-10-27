@@ -69,6 +69,51 @@ void main() {
       expect(calls.single.arguments['sensitivity'], 'lenient');
     });
 
+    test('minimumAspectRatio is omitted from the wire by default', () async {
+      // Absent key = native keeps its own default (0.3 on iOS), so existing
+      // callers see no behaviour change.
+      responder = (_) => nativeCorners();
+      await detector.detect(ScanInput.file('/x.jpg'));
+      final args = calls.single.arguments as Map;
+      expect(args.containsKey('minimumAspectRatio'), isFalse);
+    });
+
+    test('minimumAspectRatio is passed through when given', () async {
+      responder = (_) => nativeCorners();
+      await detector.detect(ScanInput.file('/x.jpg'), minimumAspectRatio: 0.1);
+      expect(calls.single.arguments['minimumAspectRatio'], 0.1);
+    });
+
+    test('minimumAspectRatio rides along on frame inputs too', () async {
+      responder = (_) => nativeCorners();
+      await detector.detect(
+        ScanInput.bytes(Uint8List.fromList([1, 2, 3]), width: 640, height: 480),
+        minimumAspectRatio: 0.2,
+      );
+      expect(calls.single.method, 'detectFrame');
+      expect(calls.single.arguments['minimumAspectRatio'], 0.2);
+      expect(calls.single.arguments['width'], 640);
+    });
+
+    test('minimumAspectRatio accepts both ends of 0..1', () async {
+      responder = (_) => nativeCorners();
+      await detector.detect(ScanInput.file('/x.jpg'), minimumAspectRatio: 0);
+      await detector.detect(ScanInput.file('/x.jpg'), minimumAspectRatio: 1);
+      expect(calls.map((c) => c.arguments['minimumAspectRatio']), [0.0, 1.0]);
+    });
+
+    test('minimumAspectRatio outside 0..1 is rejected', () async {
+      await expectLater(
+        detector.detect(ScanInput.file('/x.jpg'), minimumAspectRatio: 1.5),
+        throwsA(isA<AssertionError>()),
+      );
+      await expectLater(
+        detector.detect(ScanInput.file('/x.jpg'), minimumAspectRatio: -0.1),
+        throwsA(isA<AssertionError>()),
+      );
+      expect(calls, isEmpty); // never reached the native side
+    });
+
     test('bytes input calls detectFrame with bytes + dimensions', () async {
       responder = (_) => nativeCorners();
       await detector.detect(
@@ -282,6 +327,35 @@ void main() {
 
       await sub.cancel();
       await frames.close();
+    });
+
+    test('passes minimumAspectRatio to every frame', () async {
+      responder = (_) => nativeCorners();
+      final frames = StreamController<ScanInput>();
+      final sub = detector
+          .detectStream(frames.stream, minimumAspectRatio: 0.1)
+          .listen((_) {});
+
+      frames.add(ScanInput.file('/1.jpg'));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      frames.add(ScanInput.file('/2.jpg'));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(calls, hasLength(2));
+      expect(calls.map((c) => c.arguments['minimumAspectRatio']), [0.1, 0.1]);
+
+      await sub.cancel();
+      await frames.close();
+    });
+
+    test('rejects a minimumAspectRatio outside 0..1 up front', () {
+      expect(
+        () => detector.detectStream(
+          const Stream<ScanInput>.empty(),
+          minimumAspectRatio: 2,
+        ),
+        throwsA(isA<AssertionError>()),
+      );
     });
 
     test('emits DetectionEmpty when a frame holds no rectangle', () async {

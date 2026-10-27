@@ -13,6 +13,7 @@ import ImageIO
 /// Channel: `com.oguzhan.document_scan/detector`
 ///  - `detectFile`  { path }
 ///  - `detectFrame` { width,height,bytesPerRow,rotation, bytes(BGRA) }
+///  Both also take `sensitivity` and an optional `minimumAspectRatio`.
 public class DocumentScanPlugin: NSObject, FlutterPlugin {
 
   private var frameBusy = false
@@ -43,7 +44,9 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
         result(FlutterError(code: "INVALID_ARGS", message: "path required", details: nil))
         return
       }
-      detectFile(path: path, sensitivity: Sensitivity(args), result: result)
+      detectFile(
+        path: path, sensitivity: Sensitivity(args),
+        minimumAspectRatio: Self.minimumAspectRatio(args), result: result)
 
     case "detectFrame":
       guard let args = call.arguments as? [String: Any],
@@ -60,7 +63,8 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
       detectFrame(
         bytes: bytes.data, width: width, height: height,
         bytesPerRow: bytesPerRow, rotation: rotation,
-        sensitivity: Sensitivity(args), result: result)
+        sensitivity: Sensitivity(args),
+        minimumAspectRatio: Self.minimumAspectRatio(args), result: result)
 
     default:
       result(FlutterMethodNotImplemented)
@@ -97,10 +101,26 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
     }
   }
 
+  /// Vision's aspect gate when the caller passes none: the short side must be
+  /// at least 0.3 of the long side (about 3.3:1), which drops slivers like a
+  /// table edge. Matches `DocumentDetector.defaultMinimumAspectRatio`.
+  static let defaultMinimumAspectRatio: Float = 0.3
+
+  /// The caller's `minimumAspectRatio`, clamped to Vision's 0...1 range, or
+  /// the default when absent. Lowering it lets long, narrow documents through
+  /// (a 58 mm × 240 mm receipt is about 0.24).
+  static func minimumAspectRatio(_ args: [String: Any]) -> Float {
+    guard let raw = args["minimumAspectRatio"] as? Double, raw.isFinite else {
+      return defaultMinimumAspectRatio
+    }
+    return Float(min(max(raw, 0), 1))
+  }
+
   // MARK: - Still image
 
   private func detectFile(
-    path: String, sensitivity: Sensitivity, result: @escaping FlutterResult
+    path: String, sensitivity: Sensitivity, minimumAspectRatio: Float,
+    result: @escaping FlutterResult
   ) {
     let url = URL(fileURLWithPath: path) as CFURL
     guard let source = CGImageSourceCreateWithURL(url, nil),
@@ -111,7 +131,7 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
     let orientation = readOrientation(source: source)
     let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
 
-    let request = Self.makeRectangleRequest(sensitivity) { corners in
+    let request = Self.makeRectangleRequest(sensitivity, minimumAspectRatio) { corners in
       result(corners) // normalized already (Vision returns 0..1), Y-flipped below
     }
     workQueue.async {
@@ -126,7 +146,8 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
 
   private func detectFrame(
     bytes: Data, width: Int, height: Int, bytesPerRow: Int, rotation: Int,
-    sensitivity: Sensitivity, result: @escaping FlutterResult
+    sensitivity: Sensitivity, minimumAspectRatio: Float,
+    result: @escaping FlutterResult
   ) {
     guard acquireSlot() else { result(nil); return }
     let expected = bytesPerRow * height
@@ -153,7 +174,7 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
         }
         let handler = VNImageRequestHandler(
           cvPixelBuffer: buffer, orientation: orientation, options: [:])
-        let request = Self.makeRectangleRequest(sensitivity) { corners in
+        let request = Self.makeRectangleRequest(sensitivity, minimumAspectRatio) { corners in
           result(corners)
         }
         do { try handler.perform([request]) }
@@ -166,6 +187,7 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
 
   private static func makeRectangleRequest(
     _ sensitivity: Sensitivity,
+    _ minimumAspectRatio: Float,
     _ completion: @escaping ([String: Double]?) -> Void
   ) -> VNDetectRectanglesRequest {
     let request = VNDetectRectanglesRequest { req, error in
@@ -199,12 +221,13 @@ public class DocumentScanPlugin: NSObject, FlutterPlugin {
     // Vision detects rectangles aggressively — with loose thresholds it locks
     // onto tabletops, screen edges, shadows, and low-confidence guesses. The
     // confidence + minimum-size gates come from the requested sensitivity (see
-    // Sensitivity); the aspect gate stays fixed to drop extreme slivers like a
-    // table edge (0.3 = up to ~3:1) regardless of level.
+    // Sensitivity); the aspect gate is independent of the level and drops
+    // extreme slivers like a table edge (default 0.3 = up to ~3.3:1). Callers
+    // scanning long receipts lower it via `minimumAspectRatio`.
     request.minimumConfidence = sensitivity.minimumConfidence
     request.minimumSize = sensitivity.minimumSize
     request.maximumObservations = 1
-    request.minimumAspectRatio = 0.3
+    request.minimumAspectRatio = minimumAspectRatio
     request.maximumAspectRatio = 1.0
     return request
   }

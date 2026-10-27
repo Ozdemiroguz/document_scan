@@ -59,6 +59,11 @@ class DocumentScanner {
   /// `false` if you're already calling this from your own background isolate, to
   /// avoid a redundant isolate hop.
   ///
+  /// [sensitivity] and [minimumAspectRatio] are forwarded to
+  /// [DocumentDetector.detect] (both ignored when [corners] are supplied).
+  /// [minimumAspectRatio] is iOS-only — lower it (e.g. `0.1`) to find long,
+  /// narrow documents such as receipts.
+  ///
   /// ```dart
   /// final scanner = DocumentScanner();
   ///
@@ -77,12 +82,18 @@ class DocumentScanner {
     int? maxDimension = DocumentProcessor.defaultMaxDimension,
     bool background = true,
     DetectionSensitivity sensitivity = DetectionSensitivity.lenient,
+    double? minimumAspectRatio,
   }) async {
     // A one-shot scan of an image the caller chose defaults to lenient — they've
     // committed to a document, so finding it matters more than the odd false
     // positive. (Ignored when [corners] are supplied — detection is skipped.)
     final quad =
-        corners ?? await _detector.detect(input, sensitivity: sensitivity);
+        corners ??
+        await _detector.detect(
+          input,
+          sensitivity: sensitivity,
+          minimumAspectRatio: minimumAspectRatio,
+        );
     if (quad == null) return null;
     return processor.crop(
       input,
@@ -104,8 +115,16 @@ class DocumentScanner {
   /// back is worse than no quad at all. Pass
   /// [DetectionSensitivity.lenient] to preview exactly what an unattended
   /// [scan] of the same input would find.
+  ///
+  /// [minimumAspectRatio] is forwarded to [DocumentDetector.detect] (iOS-only).
+  /// Pass the same value you give [scan] so the preview and the scan agree.
   Future<DocumentCorners?> detectCorners(
     ScanInput input, {
     DetectionSensitivity sensitivity = DetectionSensitivity.balanced,
-  }) => _detector.detect(input, sensitivity: sensitivity);
+    double? minimumAspectRatio,
+  }) => _detector.detect(
+    input,
+    sensitivity: sensitivity,
+    minimumAspectRatio: minimumAspectRatio,
+  );
 }

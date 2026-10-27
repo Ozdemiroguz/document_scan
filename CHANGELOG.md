@@ -1,3 +1,29 @@
+## Unreleased
+
+One additive option for iOS. No API break and no behaviour change unless you
+use it — every existing call still compiles and detects exactly as before.
+
+- **Long receipts can now be detected on iOS.** Vision's
+  `VNDetectRectanglesRequest` was built with `minimumAspectRatio` hard-coded to
+  0.3, so any rectangle whose short side is under 0.3 of its long side (about
+  3.3:1) was discarded before it reached Dart. That is the right call for a
+  page — it keeps the overlay off table edges — but a till receipt is thinner:
+  58 mm × 240 mm is about 0.24, and longer receipts go down to 0.1. No
+  `sensitivity` level could find them, because the aspect gate didn't depend on
+  the level.
+
+  `DocumentDetector.detect`, `DocumentDetector.detectStream`,
+  `DocumentScanner.scan` and `DocumentScanner.detectCorners` take an optional
+  `minimumAspectRatio` (short side ÷ long side, 0..1). It is sent to the native
+  side only when set; left `null`, iOS keeps 0.3, now also exposed as
+  `DocumentDetector.defaultMinimumAspectRatio`. Values outside 0..1 fail an
+  assert in debug builds, and iOS clamps to Vision's 0...1 range regardless.
+  Android ignores it: its OpenCV pipeline takes the best convex quad and has no
+  aspect gate at detection time.
+- README: the "Platform differences" note claimed iOS used a 0.1 minimum aspect
+  and a 5% minimum size. The code has used 0.3 and 8–20% (by sensitivity); the
+  note now says so.
+
 ## 0.4.0
 
 A crash fix and a realtime-path optimisation. No API change — every existing
