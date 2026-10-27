@@ -76,6 +76,23 @@ void main() {
       expect(detectCalls, 1);
       expect(out, isNull);
     });
+
+    test('forwards minimumAspectRatio to detection', () async {
+      detectReply = nativeCorners();
+      await scanner().scan(
+        ScanInput.bytes(_png(120, 160), width: 120, height: 160),
+        minimumAspectRatio: 0.1,
+      );
+      expect(lastArgs['minimumAspectRatio'], 0.1);
+    });
+
+    test('leaves minimumAspectRatio off the wire by default', () async {
+      detectReply = nativeCorners();
+      await scanner().scan(
+        ScanInput.bytes(_png(120, 160), width: 120, height: 160),
+      );
+      expect(lastArgs.containsKey('minimumAspectRatio'), isFalse);
+    });
   });
 
   group('user-corrected mode (corners given)', () {
@@ -118,6 +135,15 @@ void main() {
         sensitivity: DetectionSensitivity.lenient,
       );
       expect(lastArgs['sensitivity'], 'lenient');
+    });
+
+    test('forwards minimumAspectRatio to the engine', () async {
+      detectReply = nativeCorners();
+      await scanner().detectCorners(
+        ScanInput.bytes(_png(100, 100), width: 100, height: 100),
+        minimumAspectRatio: 0.1,
+      );
+      expect(lastArgs['minimumAspectRatio'], 0.1);
     });
   });
 

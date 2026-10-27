@@ -35,12 +35,26 @@ class DocumentDetector {
   /// so a test can advance time deterministically instead of sleeping.
   final DateTime Function() _now;
 
+  /// The aspect gate iOS applies when [detect]'s `minimumAspectRatio` is left
+  /// `null`: a rectangle's short side must be at least 0.3 of its long side.
+  static const double defaultMinimumAspectRatio = 0.3;
+
   /// Detects the document corners in a single [input].
   ///
   /// [sensitivity] tunes how eagerly a rectangle counts as a document (see
   /// [DetectionSensitivity]). For a one-shot scan of a file the user chose,
   /// [DetectionSensitivity.lenient] finds more; the default is
   /// [DetectionSensitivity.balanced].
+  ///
+  /// [minimumAspectRatio] lowers (or raises) the narrowest shape that still
+  /// counts as a document, as the short side divided by the long side, in
+  /// 0..1. **iOS only**: it maps to Vision's
+  /// `VNDetectRectanglesRequest.minimumAspectRatio`, which otherwise stays at
+  /// [defaultMinimumAspectRatio] (0.3, about 3.3:1) to reject slivers such as
+  /// a table edge. A long receipt is narrower than that — 58 mm × 240 mm is
+  /// about 0.24 — so pass something like `0.1` to find one. Leave it `null` to
+  /// keep the default. Android ignores it: its OpenCV pipeline has no aspect
+  /// gate at detection time.
   ///
   /// Returns ordered [DocumentCorners] (normalized 0..1), or `null` when no
   /// document-like rectangle is found. Throws only on an unexpected channel
@@ -56,8 +70,13 @@ class DocumentDetector {
   Future<DocumentCorners?> detect(
     ScanInput input, {
     DetectionSensitivity sensitivity = DetectionSensitivity.balanced,
+    double? minimumAspectRatio,
   }) async {
-    final args = _encode(input, sensitivity);
+    _checkMinimumAspectRatio(minimumAspectRatio);
+    final args = {
+      ..._encode(input, sensitivity),
+      'minimumAspectRatio': ?minimumAspectRatio,
+    };
     final method = input is FileScanInput ? 'detectFile' : 'detectFrame';
     final result = await _channel.invokeMapMethod<String, dynamic>(
       method,
@@ -87,6 +106,9 @@ class DocumentDetector {
   /// [DetectionSuccess] then carries the EMA-smoothed corners. Omit it for the
   /// raw per-frame corners.
   ///
+  /// [minimumAspectRatio] is applied to every frame; see [detect]. It is
+  /// iOS-only and ignored on Android.
+  ///
   /// The package does not own the camera — pass frames from your own capture
   /// (e.g. the `camera` package's image stream) as [CameraFrameScanInput]s.
   ///
@@ -115,7 +137,9 @@ class DocumentDetector {
     CornerStabilizer? stabilize,
     DetectionSensitivity sensitivity = DetectionSensitivity.strict,
     Duration? minInterval,
+    double? minimumAspectRatio,
   }) {
+    _checkMinimumAspectRatio(minimumAspectRatio);
     late final StreamController<DetectionEvent> controller;
     var busy = false;
     var sourceDone = false;
@@ -155,7 +179,11 @@ class DocumentDetector {
             busy = true;
             lastStarted = _now();
             try {
-              final corners = await detect(frame, sensitivity: sensitivity);
+              final corners = await detect(
+                frame,
+                sensitivity: sensitivity,
+                minimumAspectRatio: minimumAspectRatio,
+              );
               final smoothed = stabilize == null
                   ? corners
                   : stabilize.add(corners);
@@ -188,6 +216,14 @@ class DocumentDetector {
       },
     );
     return controller.stream;
+  }
+
+  // Same contract as Vision's own property: a ratio of short to long side.
+  static void _checkMinimumAspectRatio(double? value) {
+    assert(
+      value == null || (value >= 0 && value <= 1),
+      'minimumAspectRatio is 0..1 (short side / long side)',
+    );
   }
 
   // --- encode / decode ---
