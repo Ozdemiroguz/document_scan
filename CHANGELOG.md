@@ -1,4 +1,8 @@
-## Unreleased
+## 0.5.0
+
+Reported, implemented and tested by
+[@tatsuhama](https://github.com/tatsuhama) (#1, #2) — the package's first
+outside contribution. Thank you.
 
 One additive option for iOS. No API break and no behaviour change unless you
 use it — every existing call still compiles and detects exactly as before.
@@ -23,6 +27,11 @@ use it — every existing call still compiles and detects exactly as before.
 - README: the "Platform differences" note claimed iOS used a 0.1 minimum aspect
   and a 5% minimum size. The code has used 0.3 and 8–20% (by sensitivity); the
   note now says so.
+
+Known gap: Android has no aspect *gate*, but `DocumentCorners.confidence` still
+marks long quads down (a typical receipt caps around 0.80–0.875). That only
+matters if you gate on confidence, e.g. `AutoCaptureAnalyzer(minConfidence:
+0.9)`; it is tracked in #3.
 
 ## 0.4.0
 
